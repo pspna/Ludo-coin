@@ -26,6 +26,8 @@ import CustomizationScreen from './src/screens/CustomizationScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
 import HelpScreen from './src/screens/HelpScreen';
 
+import { ErrorBoundary } from './src/components/ErrorBoundary';
+
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
 function Root() {
@@ -74,7 +76,6 @@ function Root() {
     </NavigationContainer>
   );
 }
-
 export default function App() {
   const [fontsLoaded] = useFonts({
     ...Ionicons.font,
@@ -89,7 +90,9 @@ export default function App() {
   return (
     <SafeAreaProvider>
       <StoreProvider>
-        <Root />
+        <ErrorBoundary fallbackTitle="Ludo Royale Encountered an Error">
+          <Root />
+        </ErrorBoundary>
       </StoreProvider>
     </SafeAreaProvider>
   );

@@ -42,10 +42,18 @@ export default function JoinRoomScreen({ navigation }: Props) {
 
   const handleJoin = async () => {
     const clean = code.trim().toUpperCase();
+    console.log('[JoinRoom] Join button clicked with code:', clean);
+
     if (clean.length !== 6) {
+      console.warn('[JoinRoom] Validation failed: Code length !== 6 (got ' + clean.length + ')');
       setError('Please enter a full 6-character room code.');
       haptic('warning');
       play('invalid');
+      return;
+    }
+
+    if (loading) {
+      console.log('[JoinRoom] Join already in progress, ignoring duplicate tap.');
       return;
     }
 
@@ -56,6 +64,13 @@ export default function JoinRoomScreen({ navigation }: Props) {
     const myPlayerId = save.profile.id || `usr_${Date.now()}`;
     const myName = save.profile.name || 'Player 2';
     const myAvatar: PlayerColor = save.profile.avatar || 'green';
+
+    console.log('[JoinRoom] Starting room join request for:', {
+      code: clean,
+      playerId: myPlayerId,
+      playerName: myName,
+      serverUrl: save.settings.serverUrl || multiplayer.getServerUrl(),
+    });
 
     try {
       if (save.settings.serverUrl) {
@@ -69,9 +84,11 @@ export default function JoinRoomScreen({ navigation }: Props) {
         playerAvatar: myAvatar,
       });
 
+      console.log('[JoinRoom] Backend response received:', res);
       setLoading(false);
 
       if (res && res.success && res.room) {
+        console.log('[JoinRoom] Join successful! Navigating to RoomLobby with room ID:', res.room.id);
         play('click');
         haptic('success');
 
@@ -81,14 +98,18 @@ export default function JoinRoomScreen({ navigation }: Props) {
           code: res.room.code,
           isHost: false,
           initialRoom: res.room,
+          playerId: myPlayerId,
         });
         return;
       }
 
-      setError(res?.error || 'Room not found or could not be joined.');
+      const errMsg = res?.error || 'Room not found or could not be joined.';
+      console.warn('[JoinRoom] Join rejected by server:', errMsg);
+      setError(errMsg);
       haptic('warning');
       play('invalid');
     } catch (err: any) {
+      console.error('[JoinRoom] Unexpected exception during join:', err);
       setLoading(false);
       setError(err?.message || 'Could not connect to multiplayer server.');
       haptic('warning');

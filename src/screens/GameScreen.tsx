@@ -597,8 +597,8 @@ export default function GameScreen({ navigation, route }: Props) {
     navigation.navigate('Home');
   };
 
-  const activeSeat = m.seats[m.turn] || m.seats[0];
-  const activeSpec = theme.players[activeSeat.color];
+  const activeSeat = (m.seats && m.seats[m.turn]) || (m.seats && m.seats[0]) || { id: 'default', color: 'red', name: 'Player' };
+  const activeSpec = (activeSeat?.color && theme.players[activeSeat.color]) || theme.players.red;
 
   const isMyTurn = isOnlineMode
     ? activeSeat.playerId === myPlayerId || (!activeSeat.playerId && activeSeat.id === mySeat.id)
@@ -699,8 +699,8 @@ export default function GameScreen({ navigation, route }: Props) {
 
       {/* ------------------------------- rail ------------------------------- */}
       <View style={styles.rail}>
-        {m.seats.map((seat, i) => {
-          const spec = theme.players[seat.color];
+        {(m.seats || []).map((seat, i) => {
+          const spec = (seat?.color && theme.players[seat.color]) || theme.players.red;
           const active = i === m.turn && m.phase !== 'over';
           const home = tokensHome(m.tokens, seat.id);
           const winner = m.winnerSeat === seat.id;

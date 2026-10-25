@@ -120,6 +120,7 @@ export default function CreateRoomScreen({ navigation }: Props) {
         code: res.room.code,
         isHost: true,
         initialRoom: res.room,
+        playerId: save.profile.id || res.room.hostPlayerId,
       });
     } catch (err: any) {
       setLoading(false);

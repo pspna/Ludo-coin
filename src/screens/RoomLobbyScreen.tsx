@@ -24,7 +24,11 @@ import { haptic, play } from '../lib/sound';
 type Props = NativeStackScreenProps<RootStackParamList, 'RoomLobby'>;
 
 export default function RoomLobbyScreen({ navigation, route }: Props) {
-  const { roomId, code, isHost: initialIsHost, initialRoom } = route.params;
+  const params = route?.params || ({} as any);
+  const roomId = params.roomId || '';
+  const code = params.code || '';
+  const initialIsHost = !!params.isHost;
+  const initialRoom = params.initialRoom || null;
   const { isDark, theme, save } = useStore();
   const ui = isDark ? theme.dark_ : theme.light;
 
@@ -33,40 +37,68 @@ export default function RoomLobbyScreen({ navigation, route }: Props) {
   const [starting, setStarting] = useState(false);
   const [copied, setCopied] = useState(false);
 
-  const myPlayerId = save.profile.id || '';
-  const isHost = room ? room.hostPlayerId === myPlayerId : initialIsHost;
-  const myPlayer = room?.players.find((p) => p.id === myPlayerId);
+  const myPlayerId = params.playerId || save.profile?.id || '';
+  const isHost = room?.hostPlayerId ? room.hostPlayerId === myPlayerId : initialIsHost;
+  const myPlayer = (room?.players || []).find((p) => p?.id === myPlayerId);
+
+  // Diagnostic log
+  useEffect(() => {
+    console.log('[RoomLobby] Screen rendered with state:', {
+      roomId,
+      code,
+      isHost,
+      myPlayerId,
+      playersCount: room?.players?.length ?? 0,
+      connState,
+    });
+  }, [roomId, code, isHost, myPlayerId, room?.players?.length, connState]);
 
   // Subscribe to real-time events
   useEffect(() => {
+    if (!roomId) {
+      console.warn('[RoomLobby] Missing roomId in route.params, cannot subscribe to multiplayer');
+      return;
+    }
+
+    console.log('[RoomLobby] Initializing multiplayer subscription for room:', roomId, 'player:', myPlayerId);
+
     // Ensure connection is established
     multiplayer.connect(myPlayerId, roomId);
 
-    const unsubConn = multiplayer.onConnectionChange((st) => setConnState(st));
+    const unsubConn = multiplayer.onConnectionChange((st) => {
+      console.log('[RoomLobby] Connection status changed to:', st);
+      setConnState(st);
+    });
 
     const unsubLobby = multiplayer.onLobbyUpdated(({ room: nextRoom }) => {
-      setRoom(nextRoom);
+      console.log('[RoomLobby] Lobby updated received. Players now:', nextRoom?.players?.length);
+      if (nextRoom) {
+        setRoom(nextRoom);
+      }
       play('click');
       haptic('light');
     });
 
     const unsubSync = multiplayer.onSyncState((nextRoom) => {
-      if (nextRoom.id === roomId) {
+      console.log('[RoomLobby] Sync state received:', nextRoom?.id);
+      if (nextRoom && nextRoom.id === roomId) {
         setRoom(nextRoom);
       }
     });
 
     const unsubGameStart = multiplayer.onGameStarted((nextRoom) => {
+      console.log('[RoomLobby] Game started event received! Navigating to GameScreen:', nextRoom?.id);
+      if (!nextRoom) return;
       setStarting(true);
       play('win');
       haptic('success');
       const seats: Seat[] = (nextRoom.players || []).map((p, idx) => ({
         id: p.seatId || `seat_${idx}`,
-        color: (p.color && theme.players[p.color]) ? p.color : RING_ORDER[idx % 4],
-        name: p.name || `Player ${idx + 1}`,
+        color: (p?.color && theme.players[p.color]) ? p.color : RING_ORDER[idx % 4],
+        name: p?.name || `Player ${idx + 1}`,
         type: 'human' as const,
         difficulty: 'medium' as const,
-        playerId: p.id,
+        playerId: p?.id,
       }));
 
       navigation.replace('Game', {
@@ -79,6 +111,7 @@ export default function RoomLobbyScreen({ navigation, route }: Props) {
     });
 
     const unsubClosed = multiplayer.onRoomClosed(({ reason }) => {
+      console.log('[RoomLobby] Room closed by host:', reason);
       Alert.alert('Room Closed', reason || 'The host has closed this room.', [
         { text: 'OK', onPress: () => navigation.navigate('Home') },
       ]);
@@ -88,13 +121,14 @@ export default function RoomLobbyScreen({ navigation, route }: Props) {
     multiplayer.syncState(roomId, myPlayerId);
 
     return () => {
+      console.log('[RoomLobby] Cleaning up multiplayer subscriptions for room:', roomId);
       unsubConn();
       unsubLobby();
       unsubSync();
       unsubGameStart();
       unsubClosed();
     };
-  }, [roomId, myPlayerId, navigation, theme.players]);
+  }, [roomId, myPlayerId, navigation]);
 
   const copyCode = async () => {
     try {
@@ -185,6 +219,21 @@ export default function RoomLobbyScreen({ navigation, route }: Props) {
     ? `WAITING FOR OPPONENT (${currentPlayers.length}/${maxSeats})...`
     : `START GAME (${currentPlayers.length} PLAYERS)`;
 
+  if (!roomId || !code) {
+    return (
+      <SafeAreaView style={[styles.root, { backgroundColor: ui.bg, justifyContent: 'center', alignItems: 'center', padding: 24 }]}>
+        <Ionicons name="alert-circle-outline" size={54} color={ui.danger} />
+        <Text style={{ color: ui.text, fontSize: 18, fontWeight: '800', marginTop: 14 }}>
+          No Active Room Found
+        </Text>
+        <Text style={{ color: ui.textDim, fontSize: 13, textAlign: 'center', marginTop: 6, marginBottom: 20 }}>
+          Please create or join a room from the main menu.
+        </Text>
+        <Btn ui={ui} label="Back to Home" icon="home" onPress={() => navigation.navigate('Home')} />
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={[styles.root, { backgroundColor: ui.bg }]} edges={['top', 'bottom']}>
       <StatusBar style={isDark ? 'light' : 'dark'} />
@@ -259,9 +308,10 @@ export default function RoomLobbyScreen({ navigation, route }: Props) {
           if (player) {
             const spec = (player.color && theme.players[player.color]) || theme.players.red;
             const isMe = player.id === myPlayerId;
+            const playerKey = player.id ? `player-${player.id}` : `slot-${seatIdx}`;
             return (
               <Animated.View
-                key={player.id}
+                key={playerKey}
                 entering={FadeInDown.delay(50 * seatIdx).duration(300)}
                 style={[
                   styles.playerCard,
