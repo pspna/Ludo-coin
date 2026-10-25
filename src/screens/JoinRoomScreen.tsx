@@ -69,73 +69,31 @@ export default function JoinRoomScreen({ navigation }: Props) {
         playerAvatar: myAvatar,
       });
 
+      setLoading(false);
+
       if (res && res.success && res.room) {
-        setLoading(false);
         play('click');
         haptic('success');
 
-        const seats: Seat[] = (res.room.players && res.room.players.length > 0)
-          ? res.room.players.map((p, idx) => {
-              const seatColor = (p.color && theme.players[p.color]) ? p.color : RING_ORDER[idx % 4];
-              return {
-                id: p.seatId || `${seatColor}-seat`,
-                color: seatColor,
-                name: p.name || `Player ${idx + 1}`,
-                type: 'human' as const,
-                difficulty: 'medium' as const,
-                playerId: p.id,
-              };
-            })
-          : [
-              { id: 'red-seat', color: 'red' as PlayerColor, name: 'Host', type: 'human' as const, difficulty: 'medium' as const },
-              { id: `${myAvatar}-seat`, color: myAvatar, name: myName, type: 'human' as const, difficulty: 'medium' as const, playerId: myPlayerId },
-            ];
-
-        // Navigate directly into the gameplay screen
-        navigation.replace('Game', {
-          mode: 'room',
-          seats,
+        // Navigate to Room Lobby so player appears in the lobby with host
+        navigation.navigate('RoomLobby', {
           roomId: res.room.id,
-          isOnline: true,
-          initialMatch: res.room.match,
+          code: res.room.code,
+          isHost: false,
+          initialRoom: res.room,
         });
         return;
       }
+
+      setError(res?.error || 'Room not found or could not be joined.');
+      haptic('warning');
+      play('invalid');
     } catch (err: any) {
-      // network / server error, fallback directly to gameplay below
+      setLoading(false);
+      setError(err?.message || 'Could not connect to multiplayer server.');
+      haptic('warning');
+      play('invalid');
     }
-
-    // Direct game play screen join (no white screen, immediate match entry)
-    setLoading(false);
-    play('click');
-    haptic('success');
-
-    const otherColors = RING_ORDER.filter((c) => c !== myAvatar);
-    const hostColor = otherColors[0] || 'red';
-    const fallbackSeats: Seat[] = [
-      {
-        id: `${hostColor}-seat`,
-        color: hostColor,
-        name: 'Host',
-        type: 'human',
-        difficulty: 'medium',
-      },
-      {
-        id: `${myAvatar}-seat`,
-        color: myAvatar,
-        name: myName,
-        type: 'human',
-        difficulty: 'medium',
-        playerId: myPlayerId,
-      },
-    ];
-
-    navigation.replace('Game', {
-      mode: 'room',
-      seats: fallbackSeats,
-      roomId: `room_${clean}`,
-      isOnline: false,
-    });
   };
 
   return (

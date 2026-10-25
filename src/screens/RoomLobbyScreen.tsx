@@ -15,7 +15,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../lib/nav';
 import { useStore } from '../lib/store';
-import { alpha } from '../lib/theme';
+import { RING_ORDER, alpha } from '../lib/theme';
 import type { PlayerColor, RoomData, RoomPlayer, Seat } from '../lib/types';
 import { Btn, Card, Header, Press } from '../components/ui';
 import { multiplayer, type ConnectionState } from '../lib/multiplayer';
@@ -47,18 +47,25 @@ export default function RoomLobbyScreen({ navigation, route }: Props) {
     const unsubLobby = multiplayer.onLobbyUpdated(({ room: nextRoom }) => {
       setRoom(nextRoom);
       play('click');
+      haptic('light');
+    });
+
+    const unsubSync = multiplayer.onSyncState((nextRoom) => {
+      if (nextRoom.id === roomId) {
+        setRoom(nextRoom);
+      }
     });
 
     const unsubGameStart = multiplayer.onGameStarted((nextRoom) => {
       setStarting(true);
       play('win');
       haptic('success');
-      const seats: Seat[] = nextRoom.players.map((p) => ({
-        id: p.seatId,
-        color: p.color,
-        name: p.name,
-        type: 'human',
-        difficulty: 'medium',
+      const seats: Seat[] = (nextRoom.players || []).map((p, idx) => ({
+        id: p.seatId || `seat_${idx}`,
+        color: (p.color && theme.players[p.color]) ? p.color : RING_ORDER[idx % 4],
+        name: p.name || `Player ${idx + 1}`,
+        type: 'human' as const,
+        difficulty: 'medium' as const,
         playerId: p.id,
       }));
 
@@ -83,17 +90,36 @@ export default function RoomLobbyScreen({ navigation, route }: Props) {
     return () => {
       unsubConn();
       unsubLobby();
+      unsubSync();
       unsubGameStart();
       unsubClosed();
     };
-  }, [roomId, myPlayerId, navigation]);
+  }, [roomId, myPlayerId, navigation, theme.players]);
+
+  const copyCode = async () => {
+    try {
+      haptic('success');
+      play('click');
+      if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(code);
+      } else {
+        await Share.share({ message: code });
+      }
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2400);
+    } catch {
+      try {
+        await Share.share({ message: code });
+      } catch {}
+    }
+  };
 
   const shareCode = async () => {
     try {
       haptic('light');
       play('click');
       await Share.share({
-        message: `Join my LudoVudo game! Room code: ${code}\nOpen LudoVudo, tap "Join Room", and enter ${code} to play!`,
+        message: `Join my LudoVudo game!\nRoom code: ${code}\nOpen LudoVudo, tap "Join Room", and enter ${code} to play together!`,
       });
     } catch {
       // ignore
@@ -140,8 +166,24 @@ export default function RoomLobbyScreen({ navigation, route }: Props) {
   };
 
   const maxSeats = room?.maxPlayers || 4;
-  const currentPlayers = room?.players || [];
+  const currentPlayers = room?.players || [
+    {
+      id: myPlayerId,
+      name: save.profile.name || 'Player 1',
+      color: save.profile.avatar || 'red',
+      isHost: initialIsHost,
+      isReady: true,
+      seatId: `${save.profile.avatar || 'red'}-seat`,
+      connected: true,
+    },
+  ];
   const canStart = isHost && currentPlayers.length >= 2 && !starting;
+
+  const hostButtonLabel = starting
+    ? 'STARTING MATCH...'
+    : currentPlayers.length < 2
+    ? `WAITING FOR OPPONENT (${currentPlayers.length}/${maxSeats})...`
+    : `START GAME (${currentPlayers.length} PLAYERS)`;
 
   return (
     <SafeAreaView style={[styles.root, { backgroundColor: ui.bg }]} edges={['top', 'bottom']}>
@@ -180,10 +222,19 @@ export default function RoomLobbyScreen({ navigation, route }: Props) {
           <View style={styles.codeActionsRow}>
             <Btn
               ui={ui}
+              variant={copied ? 'primary' : 'surface'}
+              size="sm"
+              icon={copied ? 'checkmark-circle' : 'copy'}
+              label={copied ? 'Copied! ✓' : 'Copy Code'}
+              onPress={copyCode}
+              style={{ flex: 1 }}
+            />
+            <Btn
+              ui={ui}
               variant="surface"
               size="sm"
               icon="share-social"
-              label="Share Code"
+              label="Share"
               onPress={shareCode}
               style={{ flex: 1 }}
             />
@@ -196,8 +247,10 @@ export default function RoomLobbyScreen({ navigation, route }: Props) {
             PLAYERS ({currentPlayers.length}/{maxSeats})
           </Text>
           {isHost ? (
-            <Text style={{ color: ui.primary, fontWeight: '800', fontSize: 12 }}>You are Host</Text>
-          ) : null}
+            <Text style={{ color: ui.primary, fontWeight: '800', fontSize: 12 }}>👑 You are Host</Text>
+          ) : (
+            <Text style={{ color: ui.textDim, fontWeight: '700', fontSize: 12 }}>Waiting for Host to start</Text>
+          )}
         </View>
 
         {/* Seat Slots */}
@@ -237,7 +290,7 @@ export default function RoomLobbyScreen({ navigation, route }: Props) {
                     ) : null}
                   </View>
                   <Text style={[styles.playerSub, { color: ui.textDim }]}>
-                    Seat {seatIdx + 1} · Playing as {player.color}
+                    Seat {seatIdx + 1} · Playing as {player.color || 'red'}
                   </Text>
                 </View>
 
@@ -282,9 +335,9 @@ export default function RoomLobbyScreen({ navigation, route }: Props) {
                 },
               ]}
             >
-              <Ionicons name="person-add" size={18} color={ui.textFaint} />
+              <Ionicons name="hourglass-outline" size={18} color={ui.textFaint} />
               <Text style={[styles.emptySlotText, { color: ui.textFaint }]}>
-                Waiting for Player {seatIdx + 1}...
+                {seatIdx === 1 ? 'Waiting for opponent to join...' : `Waiting for Player ${seatIdx + 1}...`}
               </Text>
             </View>
           );
@@ -296,8 +349,10 @@ export default function RoomLobbyScreen({ navigation, route }: Props) {
             <Ionicons name="information-circle" size={20} color={ui.primary} />
             <Text style={{ color: ui.textDim, fontSize: 12, lineHeight: 17, flex: 1, fontWeight: '600' }}>
               {isHost
-                ? 'Share the room code with friends. Once at least 2 players have joined, tap "Start Game" to launch the match for everyone!'
-                : 'Waiting for the host to start the match. Make sure your device stays connected.'}
+                ? currentPlayers.length < 2
+                  ? 'Share the room code above with a friend. Once they enter the code and join, tap "Start Game" to launch the match for both of you!'
+                  : 'Opponent has joined! Tap "Start Game" whenever you are ready.'
+                : 'You are connected in the lobby! When the host taps "Start Game", your match will begin automatically.'}
             </Text>
           </View>
         </Card>
@@ -310,8 +365,8 @@ export default function RoomLobbyScreen({ navigation, route }: Props) {
             ui={ui}
             size="lg"
             full
-            label={starting ? 'STARTING MATCH...' : 'START GAME'}
-            icon="play"
+            label={hostButtonLabel}
+            icon={starting ? undefined : canStart ? 'play' : 'hourglass'}
             onPress={handleStartGame}
             disabled={!canStart}
           />
@@ -320,7 +375,7 @@ export default function RoomLobbyScreen({ navigation, route }: Props) {
             <Btn
               ui={ui}
               variant="surface"
-              label="Leave"
+              label="Leave Room"
               icon="exit"
               onPress={handleLeave}
               style={{ flex: 1 }}

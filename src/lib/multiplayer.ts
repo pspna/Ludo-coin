@@ -262,6 +262,8 @@ class MultiplayerClient {
     const { type } = msg;
     switch (type) {
       case 'lobby_updated':
+      case 'room_joined':
+      case 'room_created':
         this.listeners.lobbyUpdated.forEach((fn) => fn({ room: msg.room, event: msg.event }));
         break;
 
@@ -459,12 +461,21 @@ class MultiplayerClient {
     });
   }
 
-  public startGame(roomId: string, playerId: string) {
+  public async startGame(roomId: string, playerId: string) {
     this.send({
       type: 'start_game',
       roomId,
       playerId,
     });
+    if (this.serverUrl) {
+      try {
+        await fetch(`${this.serverUrl}/api/rooms/${roomId}/start`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ playerId }),
+        });
+      } catch {}
+    }
   }
 
   public rollDice(roomId: string, playerId: string) {
@@ -492,12 +503,21 @@ class MultiplayerClient {
     });
   }
 
-  public leaveRoom(roomId: string, playerId: string) {
+  public async leaveRoom(roomId: string, playerId: string) {
     this.send({
       type: 'leave_room',
       roomId,
       playerId,
     });
+    if (this.serverUrl) {
+      try {
+        await fetch(`${this.serverUrl}/api/rooms/${roomId}/leave`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ playerId }),
+        });
+      } catch {}
+    }
     this.currentRoomId = null;
   }
 

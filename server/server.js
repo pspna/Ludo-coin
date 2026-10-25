@@ -712,8 +712,62 @@ const server = http.createServer((req, res) => {
           res.end(JSON.stringify({ success: false, error: result.error }));
           return;
         }
+
+        // Immediately notify all connected players in the lobby (e.g. Host)
+        broadcastToRoom(result.room, {
+          type: 'lobby_updated',
+          room: publicRoomData(result.room),
+          event: {
+            type: result.isRejoin ? 'player_reconnected' : 'player_joined',
+            player: result.player,
+          },
+        });
+
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ success: true, room: publicRoomData(result.room), player: result.player, isRejoin: result.isRejoin }));
+      } catch (err) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: false, error: err.message }));
+      }
+    });
+    return;
+  }
+
+  const startMatch = pathname.match(/^\/api\/rooms\/([A-Za-z0-9_-]+)\/start$/);
+  if (startMatch && req.method === 'POST') {
+    const roomId = startMatch[1];
+    let body = '';
+    req.on('data', (chunk) => { body += chunk; });
+    req.on('end', () => {
+      try {
+        const data = JSON.parse(body || '{}');
+        const result = startGame(roomId, data.playerId);
+        if (result.error) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: false, error: result.error }));
+          return;
+        }
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: true, room: publicRoomData(result.room) }));
+      } catch (err) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: false, error: err.message }));
+      }
+    });
+    return;
+  }
+
+  const leaveMatch = pathname.match(/^\/api\/rooms\/([A-Za-z0-9_-]+)\/leave$/);
+  if (leaveMatch && req.method === 'POST') {
+    const roomId = leaveMatch[1];
+    let body = '';
+    req.on('data', (chunk) => { body += chunk; });
+    req.on('end', () => {
+      try {
+        const data = JSON.parse(body || '{}');
+        leaveRoom(roomId, data.playerId);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: true }));
       } catch (err) {
         res.writeHead(400, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ success: false, error: err.message }));
@@ -803,7 +857,7 @@ function handleWsMessage(ws, msg) {
         isRejoin: result.isRejoin,
       }));
 
-      // Broadcast to other players in room
+      // Broadcast to all players in room so everyone's lobby stays in sync
       broadcastToRoom(result.room, {
         type: 'lobby_updated',
         room: publicRoomData(result.room),
@@ -811,7 +865,7 @@ function handleWsMessage(ws, msg) {
           type: result.isRejoin ? 'player_reconnected' : 'player_joined',
           player: result.player,
         },
-      }, pId);
+      });
       break;
     }
 

@@ -27,7 +27,7 @@ export default function CreateRoomScreen({ navigation }: Props) {
   const { isDark, theme, save, setName } = useStore();
   const ui = isDark ? theme.dark_ : theme.light;
 
-  const [roomMode, setRoomMode] = useState<'pass_play' | 'online'>('pass_play');
+  const [roomMode, setRoomMode] = useState<'pass_play' | 'online'>('online');
   const [name, setHostName] = useState(save.profile.name || 'Player');
   const [maxPlayers, setMaxPlayers] = useState<2 | 3 | 4>(4);
   const [selectedColor, setSelectedColor] = useState<PlayerColor>(save.profile.avatar || 'red');
@@ -114,32 +114,12 @@ export default function CreateRoomScreen({ navigation }: Props) {
       play('click');
       haptic('success');
 
-      const seats: Seat[] = (res.room.players && res.room.players.length > 0)
-        ? res.room.players.map((p, idx) => ({
-            id: p.seatId || `${p.color || RING_ORDER[idx % 4]}-seat`,
-            color: (p.color && theme.players[p.color]) ? p.color : RING_ORDER[idx % 4],
-            name: p.name || `Player ${idx + 1}`,
-            type: 'human' as const,
-            difficulty: 'medium' as const,
-            playerId: p.id,
-          }))
-        : [
-            {
-              id: `${selectedColor}-seat`,
-              color: selectedColor,
-              name: name.trim() || save.profile.name || 'Player 1',
-              type: 'human' as const,
-              difficulty: 'medium' as const,
-              playerId: save.profile.id,
-            },
-          ];
-
-      navigation.replace('Game', {
-        mode: 'room',
-        seats,
+      // Navigate to Room Lobby so host can see the code and wait for players
+      navigation.navigate('RoomLobby', {
         roomId: res.room.id,
-        isOnline: true,
-        initialMatch: res.room.match,
+        code: res.room.code,
+        isHost: true,
+        initialRoom: res.room,
       });
     } catch (err: any) {
       setLoading(false);
