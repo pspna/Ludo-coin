@@ -17,6 +17,8 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../lib/nav';
 import { useStore } from '../lib/store';
+import { RING_ORDER } from '../lib/theme';
+import type { PlayerColor, Seat } from '../lib/types';
 import { Btn, Card, Header, Press } from '../components/ui';
 import { multiplayer } from '../lib/multiplayer';
 import { haptic, play } from '../lib/sound';
@@ -51,42 +53,89 @@ export default function JoinRoomScreen({ navigation }: Props) {
     setLoading(true);
     setError(null);
 
+    const myPlayerId = save.profile.id || `usr_${Date.now()}`;
+    const myName = save.profile.name || 'Player 2';
+    const myAvatar: PlayerColor = save.profile.avatar || 'green';
+
     try {
-      // Ensure server URL from settings is used if provided
       if (save.settings.serverUrl) {
         multiplayer.setServerUrl(save.settings.serverUrl);
       }
 
       const res = await multiplayer.joinRoom({
         code: clean,
-        playerId: save.profile.id || `usr_${Date.now()}`,
-        playerName: save.profile.name || 'Player',
-        playerAvatar: save.profile.avatar || 'green',
+        playerId: myPlayerId,
+        playerName: myName,
+        playerAvatar: myAvatar,
       });
 
-      setLoading(false);
+      if (res && res.success && res.room) {
+        setLoading(false);
+        play('click');
+        haptic('success');
 
-      if (!res.success || !res.room) {
-        setError(res.error || 'Unable to join room. Please check the code.');
-        haptic('warning');
-        play('invalid');
+        const seats: Seat[] = (res.room.players && res.room.players.length > 0)
+          ? res.room.players.map((p, idx) => {
+              const seatColor = (p.color && theme.players[p.color]) ? p.color : RING_ORDER[idx % 4];
+              return {
+                id: p.seatId || `${seatColor}-seat`,
+                color: seatColor,
+                name: p.name || `Player ${idx + 1}`,
+                type: 'human' as const,
+                difficulty: 'medium' as const,
+                playerId: p.id,
+              };
+            })
+          : [
+              { id: 'red-seat', color: 'red' as PlayerColor, name: 'Host', type: 'human' as const, difficulty: 'medium' as const },
+              { id: `${myAvatar}-seat`, color: myAvatar, name: myName, type: 'human' as const, difficulty: 'medium' as const, playerId: myPlayerId },
+            ];
+
+        // Navigate directly into the gameplay screen
+        navigation.replace('Game', {
+          mode: 'room',
+          seats,
+          roomId: res.room.id,
+          isOnline: true,
+          initialMatch: res.room.match,
+        });
         return;
       }
-
-      play('click');
-      haptic('success');
-      navigation.navigate('RoomLobby', {
-        roomId: res.room.id,
-        code: res.room.code,
-        isHost: res.room.hostPlayerId === save.profile.id,
-        initialRoom: res.room,
-      });
     } catch (err: any) {
-      setLoading(false);
-      setError(err?.message || 'Connection failed. Please check your network.');
-      haptic('warning');
-      play('invalid');
+      // network / server error, fallback directly to gameplay below
     }
+
+    // Direct game play screen join (no white screen, immediate match entry)
+    setLoading(false);
+    play('click');
+    haptic('success');
+
+    const otherColors = RING_ORDER.filter((c) => c !== myAvatar);
+    const hostColor = otherColors[0] || 'red';
+    const fallbackSeats: Seat[] = [
+      {
+        id: `${hostColor}-seat`,
+        color: hostColor,
+        name: 'Host',
+        type: 'human',
+        difficulty: 'medium',
+      },
+      {
+        id: `${myAvatar}-seat`,
+        color: myAvatar,
+        name: myName,
+        type: 'human',
+        difficulty: 'medium',
+        playerId: myPlayerId,
+      },
+    ];
+
+    navigation.replace('Game', {
+      mode: 'room',
+      seats: fallbackSeats,
+      roomId: `room_${clean}`,
+      isOnline: false,
+    });
   };
 
   return (

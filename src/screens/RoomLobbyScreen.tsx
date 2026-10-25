@@ -204,7 +204,7 @@ export default function RoomLobbyScreen({ navigation, route }: Props) {
         {Array.from({ length: maxSeats }).map((_, seatIdx) => {
           const player: RoomPlayer | undefined = currentPlayers[seatIdx];
           if (player) {
-            const spec = theme.players[player.color];
+            const spec = (player.color && theme.players[player.color]) || theme.players.red;
             const isMe = player.id === myPlayerId;
             return (
               <Animated.View

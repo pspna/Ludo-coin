@@ -113,11 +113,33 @@ export default function CreateRoomScreen({ navigation }: Props) {
 
       play('click');
       haptic('success');
-      navigation.navigate('RoomLobby', {
+
+      const seats: Seat[] = (res.room.players && res.room.players.length > 0)
+        ? res.room.players.map((p, idx) => ({
+            id: p.seatId || `${p.color || RING_ORDER[idx % 4]}-seat`,
+            color: (p.color && theme.players[p.color]) ? p.color : RING_ORDER[idx % 4],
+            name: p.name || `Player ${idx + 1}`,
+            type: 'human' as const,
+            difficulty: 'medium' as const,
+            playerId: p.id,
+          }))
+        : [
+            {
+              id: `${selectedColor}-seat`,
+              color: selectedColor,
+              name: name.trim() || save.profile.name || 'Player 1',
+              type: 'human' as const,
+              difficulty: 'medium' as const,
+              playerId: save.profile.id,
+            },
+          ];
+
+      navigation.replace('Game', {
+        mode: 'room',
+        seats,
         roomId: res.room.id,
-        code: res.room.code,
-        isHost: true,
-        initialRoom: res.room,
+        isOnline: true,
+        initialMatch: res.room.match,
       });
     } catch (err: any) {
       setLoading(false);

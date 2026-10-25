@@ -658,11 +658,20 @@ export default function GameScreen({ navigation, route }: Props) {
         </Press>
         <View style={{ flex: 1, alignItems: 'center' }}>
           <Text style={[styles.modeTitle, { color: ui.text }]}>
-            {isOnlineMode ? 'Online Room Match' : mode === 'classic' ? 'Classic Match' : mode === 'quick' ? 'Quick Match' : 'Practice'}
+            {isOnlineMode ? 'Online Room Match' : mode === 'room' ? 'Room Match' : mode === 'classic' ? 'Classic Match' : mode === 'quick' ? 'Quick Match' : 'Practice'}
           </Text>
-          <Text style={[styles.modeSub, { color: ui.textDim }]}>
-            {m.seats.length} player{m.seats.length > 1 ? 's' : ''} · first to centre wins
-          </Text>
+          {roomId ? (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 1 }}>
+              <Ionicons name="key" size={11} color={ui.primary} />
+              <Text style={[styles.modeSub, { color: ui.primary, fontWeight: '800' }]}>
+                CODE: {roomId.replace(/^room_/, '').toUpperCase()}
+              </Text>
+            </View>
+          ) : (
+            <Text style={[styles.modeSub, { color: ui.textDim }]}>
+              {m.seats.length} player{m.seats.length > 1 ? 's' : ''} · first to centre wins
+            </Text>
+          )}
         </View>
 
         {isOnlineMode ? (
