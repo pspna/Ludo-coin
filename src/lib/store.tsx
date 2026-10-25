@@ -13,6 +13,7 @@ import {
 } from './storage';
 import type { AchievementDef } from './storage';
 import type { PlayerColor, SaveData, Settings, Token } from './types';
+import { multiplayer } from './multiplayer';
 
 export interface MatchResult {
   mode: 'classic' | 'quick' | 'practice' | 'room';
@@ -62,6 +63,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     let alive = true;
     loadSave().then((s) => {
       if (!alive) return;
+      if (s?.settings?.serverUrl) {
+        multiplayer.setServerUrl(s.settings.serverUrl);
+      }
       setSave(s);
       setReady(true);
     });
@@ -80,7 +84,12 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const setSettings = useCallback(
-    (patch: Partial<Settings>) => update((d) => Object.assign(d.settings, patch)),
+    (patch: Partial<Settings>) => {
+      if (patch.serverUrl !== undefined) {
+        multiplayer.setServerUrl(patch.serverUrl);
+      }
+      return update((d) => Object.assign(d.settings, patch));
+    },
     [update],
   );
 

@@ -200,11 +200,13 @@ export default function RoomLobbyScreen({ navigation, route }: Props) {
   };
 
   const maxSeats = room?.maxPlayers || 4;
-  const currentPlayers = room?.players || [
+  const currentPlayers: RoomPlayer[] = room?.players || [
     {
       id: myPlayerId,
       name: save.profile.name || 'Player 1',
+      avatar: save.profile.avatar || 'red',
       color: save.profile.avatar || 'red',
+      seatIndex: 0,
       isHost: initialIsHost,
       isReady: true,
       seatId: `${save.profile.avatar || 'red'}-seat`,

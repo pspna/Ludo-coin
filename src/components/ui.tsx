@@ -51,23 +51,50 @@ export function Press({ children, onPress, onLongPress, style, disabled, scaleTo
 }
 
 interface BtnProps {
-  label: string;
+  label?: string;
+  title?: string;
   onPress?: () => void;
   icon?: string;
   iconSize?: number;
-  variant?: 'primary' | 'surface' | 'ghost' | 'gold';
+  variant?: 'primary' | 'surface' | 'ghost' | 'gold' | 'secondary' | 'danger';
   size?: 'sm' | 'md' | 'lg';
   colors?: string[];
   style?: StyleProp<ViewStyle>;
   disabled?: boolean;
   full?: boolean;
-  ui: { text: string; textDim: string; surface: string; border: string; primary: string; onPrimary: string; gold: string; shadow: string };
+  ui?: {
+    text?: string;
+    textDim?: string;
+    surface?: string;
+    surfaceAlt?: string;
+    border?: string;
+    primary?: string;
+    onPrimary?: string;
+    gold?: string;
+    shadow?: string;
+    danger?: string;
+  };
 }
 
-export function Btn({ label, onPress, icon, iconSize = 20, variant = 'primary', size = 'md', colors, style, disabled, full, ui }: BtnProps) {
+const DEFAULT_BTN_UI = {
+  text: '#F8FAFC',
+  textDim: '#94A3B8',
+  surface: '#1E293B',
+  surfaceAlt: '#0F172A',
+  border: '#334155',
+  primary: '#7C3AED',
+  onPrimary: '#FFFFFF',
+  gold: '#F59E0B',
+  shadow: '#000000',
+  danger: '#EF4444',
+};
+
+export function Btn({ label, title, onPress, icon, iconSize = 20, variant = 'primary', size = 'md', colors, style, disabled, full, ui }: BtnProps) {
   const padV = size === 'lg' ? 17 : size === 'sm' ? 9 : 13;
   const padH = size === 'lg' ? 28 : size === 'sm' ? 14 : 20;
   const font = size === 'lg' ? 18 : size === 'sm' ? 13 : 15;
+  const displayLabel = label || title || '';
+  const safeUi = { ...DEFAULT_BTN_UI, ...(ui || {}) };
 
   const base: ViewStyle = {
     paddingVertical: padV,
@@ -79,34 +106,40 @@ export function Btn({ label, onPress, icon, iconSize = 20, variant = 'primary', 
     alignSelf: full ? 'stretch' : 'flex-start',
   };
 
-  if (variant === 'primary' || variant === 'gold') {
-    const grad = colors || (variant === 'gold' ? ['#F5C542', '#D08A0B'] : [ui.primary, shade(ui.primary, -0.3)]);
-    const textColor = variant === 'gold' ? '#3A2A00' : ui.onPrimary;
+  if (variant === 'primary' || variant === 'gold' || variant === 'danger') {
+    const grad = colors || (
+      variant === 'gold'
+        ? ['#F5C542', '#D08A0B']
+        : variant === 'danger'
+        ? [safeUi.danger, shade(safeUi.danger, -0.25)]
+        : [safeUi.primary, shade(safeUi.primary, -0.3)]
+    );
+    const textColor = variant === 'gold' ? '#3A2A00' : safeUi.onPrimary;
     return (
       <Press onPress={onPress} disabled={disabled} style={[{ borderRadius: base.borderRadius, shadowColor: grad[0], shadowOpacity: 0.45, shadowRadius: 14, shadowOffset: { width: 0, height: 7 }, elevation: 6 }, style]}>
         <LinearGradient colors={grad as any} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} style={base}>
           {icon ? <Ionicons name={icon as any} size={iconSize} color={textColor} style={{ marginRight: 9 }} /> : null}
-          <Text style={{ color: textColor, fontWeight: '900', fontSize: font, letterSpacing: 0.4 }}>{label}</Text>
+          <Text style={{ color: textColor, fontWeight: '900', fontSize: font, letterSpacing: 0.4 }}>{displayLabel}</Text>
         </LinearGradient>
       </Press>
     );
   }
 
-  const isSurface = variant === 'surface';
+  const isSurface = variant === 'surface' || variant === 'secondary';
   return (
     <Press onPress={onPress} disabled={disabled} style={style}>
       <View
         style={[
           base,
           {
-            backgroundColor: isSurface ? ui.surface : 'transparent',
+            backgroundColor: isSurface ? safeUi.surface : 'transparent',
             borderWidth: isSurface ? 1.5 : 0,
-            borderColor: ui.border,
+            borderColor: safeUi.border,
           },
         ]}
       >
-        {icon ? <Ionicons name={icon as any} size={iconSize} color={isSurface ? ui.text : ui.textDim} style={{ marginRight: 8 }} /> : null}
-        <Text style={{ color: isSurface ? ui.text : ui.textDim, fontWeight: '800', fontSize: font }}>{label}</Text>
+        {icon ? <Ionicons name={icon as any} size={iconSize} color={isSurface ? safeUi.text : safeUi.textDim} style={{ marginRight: 8 }} /> : null}
+        <Text style={{ color: isSurface ? safeUi.text : safeUi.textDim, fontWeight: '800', fontSize: font }}>{displayLabel}</Text>
       </View>
     </Press>
   );

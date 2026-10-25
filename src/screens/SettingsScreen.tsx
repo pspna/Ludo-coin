@@ -161,17 +161,21 @@ export default function SettingsScreen({ navigation }: Props) {
             <View style={{ flexDirection: 'row', gap: 8, marginBottom: 8 }}>
               <View style={{ flex: 1 }}>
                 <Btn
-                  title="Save Endpoint"
+                  ui={ui}
+                  label="Save Endpoint"
                   size="sm"
                   variant="primary"
+                  icon="checkmark"
                   onPress={handleSaveServer}
                 />
               </View>
               <View style={{ flex: 1 }}>
                 <Btn
-                  title={testResult?.testing ? "Testing..." : "Test Connection"}
+                  ui={ui}
+                  label={testResult?.testing ? "Testing..." : "Test Connection"}
                   size="sm"
-                  variant="secondary"
+                  variant="surface"
+                  icon={testResult?.testing ? undefined : "wifi"}
                   disabled={testResult?.testing}
                   onPress={handleTestServer}
                 />

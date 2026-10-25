@@ -48,16 +48,34 @@ export interface RoomClosedPayload {
 
 type EventListener<T> = (data: T) => void;
 
+export function normalizeServerUrl(rawUrl: string): string {
+  let clean = (rawUrl || '').trim().replace(/\/+$/, '');
+  if (!clean) return '';
+  if (!clean.startsWith('http://') && !clean.startsWith('https://') && !clean.startsWith('ws://') && !clean.startsWith('wss://')) {
+    // If running in browser over https, default to https
+    if (typeof window !== 'undefined' && window.location?.protocol === 'https:') {
+      clean = `https://${clean}`;
+    } else {
+      clean = `http://${clean}`;
+    }
+  }
+  return clean;
+}
+
 export function getDefaultServerUrl(): string {
   if (process.env.EXPO_PUBLIC_SERVER_URL) {
-    return process.env.EXPO_PUBLIC_SERVER_URL.trim().replace(/\/+$/, '');
+    return normalizeServerUrl(process.env.EXPO_PUBLIC_SERVER_URL);
   }
   if (Platform.OS === 'web' && typeof window !== 'undefined' && window.location) {
     const host = window.location.hostname || 'localhost';
     if (host === 'localhost' || host === '127.0.0.1') {
       return `http://${host}:3001`;
     }
-    // Static web hosting (Vercel) does not run background processes on port 3001
+    // Check if host is a LAN IP (e.g. 192.168.x.x, 10.x.x.x, 172.x.x.x)
+    if (/^192\.168\./.test(host) || /^10\./.test(host) || /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(host)) {
+      return `http://${host}:3001`;
+    }
+    // Static web hosting on Vercel or other cloud platforms
     return '';
   }
   // Android emulator uses 10.0.2.2 to access host machine; physical devices use LAN IP or custom setting
@@ -66,12 +84,24 @@ export function getDefaultServerUrl(): string {
 
 export async function testServerConnection(url: string): Promise<{ ok: boolean; message: string }> {
   try {
-    const clean = (url || '').trim().replace(/\/+$/, '');
-    if (!clean) return { ok: false, message: 'Server URL cannot be empty' };
+    const clean = normalizeServerUrl(url);
+    if (!clean) {
+      return { ok: false, message: 'Server URL cannot be empty' };
+    }
+
+    // Check mixed content in browser: HTTPS page cannot fetch insecure HTTP
+    if (typeof window !== 'undefined' && window.location?.protocol === 'https:' && clean.startsWith('http:')) {
+      return {
+        ok: false,
+        message: `Mixed content blocked: Cannot connect to insecure HTTP (${clean}) from an HTTPS page. Please use HTTPS/WSS (e.g. on Render/Railway).`,
+      };
+    }
+
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 6000);
+    const timeout = setTimeout(() => controller.abort(), 7000);
     const res = await fetch(`${clean}/health`, { signal: controller.signal });
     clearTimeout(timeout);
+
     if (!res.ok) {
       return { ok: false, message: `Server returned HTTP ${res.status}` };
     }
@@ -83,7 +113,7 @@ export async function testServerConnection(url: string): Promise<{ ok: boolean; 
 }
 
 export function toWsUrl(httpUrl: string): string {
-  const clean = (httpUrl || getDefaultServerUrl()).replace(/\/+$/, '');
+  const clean = normalizeServerUrl(httpUrl || getDefaultServerUrl());
   if (!clean) return '';
   if (clean.startsWith('https://')) return clean.replace('https://', 'wss://');
   if (clean.startsWith('http://')) return clean.replace('http://', 'ws://');
@@ -128,11 +158,14 @@ class MultiplayerClient {
   };
 
   public setServerUrl(url: string) {
-    if (url && url !== this.serverUrl) {
-      this.serverUrl = url;
+    const clean = normalizeServerUrl(url);
+    if (clean !== this.serverUrl) {
+      this.serverUrl = clean;
       if (this.ws) {
         this.disconnect();
-        this.connect(this.currentPlayerId || undefined, this.currentRoomId || undefined);
+        if (clean) {
+          this.connect(this.currentPlayerId || undefined, this.currentRoomId || undefined);
+        }
       }
     }
   }
@@ -157,6 +190,11 @@ class MultiplayerClient {
     if (playerId) this.currentPlayerId = playerId;
     if (roomId) this.currentRoomId = roomId;
 
+    if (!this.serverUrl || !this.serverUrl.trim()) {
+      this.setConnectionState('disconnected');
+      return Promise.resolve(false);
+    }
+
     if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) {
       return Promise.resolve(true);
     }
@@ -166,6 +204,11 @@ class MultiplayerClient {
     return new Promise((resolve) => {
       try {
         const wsUrl = toWsUrl(this.serverUrl);
+        if (!wsUrl) {
+          this.setConnectionState('disconnected');
+          resolve(false);
+          return;
+        }
         const socket = new WebSocket(wsUrl);
         this.ws = socket;
 
@@ -335,6 +378,14 @@ class MultiplayerClient {
   // ---------------- REST + WS Room Operations ----------------
 
   private formatConnectionError(): string {
+    if (!this.serverUrl || !this.serverUrl.trim()) {
+      return (
+        'Multiplayer server URL is not configured. Please open Server Settings (⚙️) ' +
+        'to set your live backend endpoint (e.g. https://your-server.onrender.com) ' +
+        'or set EXPO_PUBLIC_SERVER_URL in your deployment configuration.'
+      );
+    }
+
     const isVercel = this.serverUrl.includes('vercel.app');
     const isHttpsMismatch =
       typeof window !== 'undefined' &&
@@ -342,10 +393,17 @@ class MultiplayerClient {
       this.serverUrl.startsWith('http:');
 
     if (isVercel) {
-      return `Multiplayer server not found on Vercel. Vercel only hosts the frontend web app. The live multiplayer server (server/server.js) must be hosted on Render/Railway. Configure your server URL in Settings.`;
+      return (
+        'Multiplayer server not found on Vercel. Vercel only hosts the frontend web app. ' +
+        'The live multiplayer server (server/server.js) must be hosted on Render or Railway. ' +
+        'Configure your live server URL in Server Settings (⚙️).'
+      );
     }
     if (isHttpsMismatch) {
-      return `Mixed content blocked: Cannot connect to insecure HTTP (${this.serverUrl}) from an HTTPS page. Please host the server with HTTPS/WSS (e.g. Render/Railway) and update Settings.`;
+      return (
+        `Mixed content blocked: Cannot connect to insecure HTTP (${this.serverUrl}) from an HTTPS page. ` +
+        'Please host the multiplayer server with HTTPS/WSS (e.g. on Render/Railway) and update Server Settings.'
+      );
     }
     return `Could not connect to multiplayer server at ${this.serverUrl}. Please check your connection or server settings.`;
   }
@@ -357,6 +415,9 @@ class MultiplayerClient {
     hostColor?: PlayerColor;
     maxPlayers: number;
   }): Promise<{ success: boolean; room?: RoomData; error?: string }> {
+    if (!this.serverUrl || !this.serverUrl.trim()) {
+      return { success: false, error: this.formatConnectionError() };
+    }
     try {
       this.currentPlayerId = params.hostId;
       const res = await fetch(`${this.serverUrl}/api/rooms`, {
@@ -381,6 +442,9 @@ class MultiplayerClient {
   }
 
   public async getRoomByCode(code: string): Promise<{ success: boolean; room?: RoomData; error?: string }> {
+    if (!this.serverUrl || !this.serverUrl.trim()) {
+      return { success: false, error: this.formatConnectionError() };
+    }
     try {
       const clean = (code || '').trim().toUpperCase();
       const res = await fetch(`${this.serverUrl}/api/rooms/${clean}`);
@@ -404,6 +468,9 @@ class MultiplayerClient {
     playerAvatar: PlayerColor;
     playerColor?: PlayerColor;
   }): Promise<{ success: boolean; room?: RoomData; player?: RoomPlayer; isRejoin?: boolean; error?: string }> {
+    if (!this.serverUrl || !this.serverUrl.trim()) {
+      return { success: false, error: this.formatConnectionError() };
+    }
     try {
       const clean = (params.code || '').trim().toUpperCase();
       this.currentPlayerId = params.playerId;
