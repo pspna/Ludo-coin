@@ -1,5 +1,5 @@
-import React from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import React, { useState } from 'react';
+import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { StatusBar } from 'expo-status-bar';
@@ -10,7 +10,7 @@ import { useStore } from '../lib/store';
 import { alpha } from '../lib/theme';
 import { Btn, Card, Header, Press } from '../components/ui';
 import { play, haptic, setFeedback } from '../lib/sound';
-import { multiplayer, getDefaultServerUrl } from '../lib/multiplayer';
+import { multiplayer, getDefaultServerUrl, testServerConnection } from '../lib/multiplayer';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Settings'>;
 
@@ -18,6 +18,9 @@ export default function SettingsScreen({ navigation }: Props) {
   const { isDark, theme, save, setSettings, resetAll } = useStore();
   const ui = isDark ? theme.dark_ : theme.light;
   const s = save.settings;
+
+  const [serverUrlInput, setServerUrlInput] = useState(s.serverUrl || getDefaultServerUrl());
+  const [testResult, setTestResult] = useState<{ testing?: boolean; ok?: boolean; message?: string } | null>(null);
 
   const toggle = (key: 'sound' | 'haptics' | 'animations' | 'hints' | 'autoRoll') => () => {
     const next = !s[key];
@@ -27,6 +30,39 @@ export default function SettingsScreen({ navigation }: Props) {
       play('click');
       haptic('light');
     }
+  };
+
+  const handleSaveServer = () => {
+    const clean = serverUrlInput.trim().replace(/\/+$/, '');
+    setSettings({ serverUrl: clean });
+    multiplayer.setServerUrl(clean);
+    play('click');
+    haptic('success');
+    setTestResult({ ok: true, message: 'Server endpoint saved!' });
+  };
+
+  const handleTestServer = async () => {
+    setTestResult({ testing: true });
+    haptic('light');
+    const res = await testServerConnection(serverUrlInput.trim());
+    setTestResult({ testing: false, ok: res.ok, message: res.message });
+    if (res.ok) {
+      play('click');
+      haptic('success');
+    } else {
+      play('invalid');
+      haptic('warning');
+    }
+  };
+
+  const handleResetServer = () => {
+    const def = getDefaultServerUrl();
+    setServerUrlInput(def);
+    setSettings({ serverUrl: def });
+    multiplayer.setServerUrl(def);
+    setTestResult(null);
+    play('click');
+    haptic('light');
   };
 
   return (
@@ -84,23 +120,108 @@ export default function SettingsScreen({ navigation }: Props) {
         <Text style={[styles.section, { color: ui.textDim }]}>MULTIPLAYER SERVER</Text>
         <Card ui={ui}>
           <View style={{ paddingVertical: 4 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 }}>
               <Ionicons name="server" size={17} color={ui.primary} />
               <Text style={{ color: ui.text, fontWeight: '800', fontSize: 13.5, flex: 1 }}>Server Endpoint</Text>
-              <Press
-                onPress={() => {
-                  const def = getDefaultServerUrl();
-                  setSettings({ serverUrl: def });
-                  multiplayer.setServerUrl(def);
-                  play('click');
-                  haptic('light');
-                }}
-              >
+              <Press onPress={handleResetServer}>
                 <Text style={{ color: ui.primary, fontWeight: '800', fontSize: 11.5 }}>Reset Default</Text>
               </Press>
             </View>
-            <Text style={{ color: ui.textFaint, fontSize: 11.5, fontWeight: '600', marginTop: 4 }}>
-              Current: {s.serverUrl || getDefaultServerUrl()}
+
+            <View
+              style={{
+                backgroundColor: ui.surfaceAlt,
+                borderWidth: 1,
+                borderColor: ui.border,
+                borderRadius: 10,
+                paddingHorizontal: 12,
+                paddingVertical: 8,
+                marginBottom: 10,
+              }}
+            >
+              <TextInput
+                value={serverUrlInput}
+                onChangeText={(text) => {
+                  setServerUrlInput(text);
+                  setTestResult(null);
+                }}
+                placeholder="https://your-server.onrender.com"
+                placeholderTextColor={ui.textFaint}
+                autoCapitalize="none"
+                autoCorrect={false}
+                style={{
+                  color: ui.text,
+                  fontSize: 13,
+                  fontWeight: '600',
+                  padding: 0,
+                }}
+              />
+            </View>
+
+            <View style={{ flexDirection: 'row', gap: 8, marginBottom: 8 }}>
+              <View style={{ flex: 1 }}>
+                <Btn
+                  title="Save Endpoint"
+                  size="sm"
+                  variant="primary"
+                  onPress={handleSaveServer}
+                />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Btn
+                  title={testResult?.testing ? "Testing..." : "Test Connection"}
+                  size="sm"
+                  variant="secondary"
+                  disabled={testResult?.testing}
+                  onPress={handleTestServer}
+                />
+              </View>
+            </View>
+
+            {testResult && (
+              <View
+                style={{
+                  backgroundColor: testResult.testing
+                    ? alpha(ui.primary, 0.12)
+                    : testResult.ok
+                    ? alpha('#22C55E', 0.12)
+                    : alpha('#EF4444', 0.12),
+                  borderRadius: 8,
+                  padding: 8,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 8,
+                  marginBottom: 8,
+                }}
+              >
+                {testResult.testing ? (
+                  <ActivityIndicator size="small" color={ui.primary} />
+                ) : (
+                  <Ionicons
+                    name={testResult.ok ? 'checkmark-circle' : 'alert-circle'}
+                    size={16}
+                    color={testResult.ok ? '#22C55E' : '#EF4444'}
+                  />
+                )}
+                <Text
+                  style={{
+                    color: testResult.testing
+                      ? ui.primary
+                      : testResult.ok
+                      ? '#22C55E'
+                      : '#EF4444',
+                    fontSize: 12,
+                    fontWeight: '700',
+                    flex: 1,
+                  }}
+                >
+                  {testResult.testing ? 'Testing server reachability...' : testResult.message}
+                </Text>
+              </View>
+            )}
+
+            <Text style={{ color: ui.textFaint, fontSize: 11, fontWeight: '500', lineHeight: 15 }}>
+              💡 Vercel only hosts the web application. For online multiplayer (Create / Join room), host <Text style={{ fontWeight: '700' }}>server/server.js</Text> on Render or Railway, and paste the HTTPS endpoint above.
             </Text>
           </View>
         </Card>

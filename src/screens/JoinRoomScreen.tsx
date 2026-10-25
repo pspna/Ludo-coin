@@ -155,9 +155,35 @@ export default function JoinRoomScreen({ navigation }: Props) {
             />
 
             {error ? (
-              <Animated.View entering={FadeIn.duration(200)} style={[styles.errorBox, { backgroundColor: 'rgba(239, 68, 68, 0.12)', borderColor: ui.danger }]}>
-                <Ionicons name="alert-circle" size={18} color={ui.danger} />
-                <Text style={[styles.errorText, { color: ui.danger }]}>{error}</Text>
+              <Animated.View entering={FadeIn.duration(200)} style={[styles.errorBox, { backgroundColor: 'rgba(239, 68, 68, 0.12)', borderColor: ui.danger, flexDirection: 'column', alignItems: 'stretch' }]}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <Ionicons name="alert-circle" size={18} color={ui.danger} />
+                  <Text style={[styles.errorText, { color: ui.danger, flex: 1 }]}>{error}</Text>
+                </View>
+                <View style={{ flexDirection: 'row', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
+                  <Press
+                    onPress={() => navigation.navigate('CreateRoom')}
+                    style={{
+                      backgroundColor: ui.primary,
+                      paddingHorizontal: 12,
+                      paddingVertical: 7,
+                      borderRadius: 7,
+                    }}
+                  >
+                    <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: 12 }}>▶️ Host Pass & Play Room</Text>
+                  </Press>
+                  <Press
+                    onPress={() => navigation.navigate('Settings')}
+                    style={{
+                      backgroundColor: alpha(ui.danger, 0.15),
+                      paddingHorizontal: 12,
+                      paddingVertical: 7,
+                      borderRadius: 7,
+                    }}
+                  >
+                    <Text style={{ color: ui.danger, fontWeight: '800', fontSize: 12 }}>⚙️ Server Settings</Text>
+                  </Press>
+                </View>
               </Animated.View>
             ) : null}
 

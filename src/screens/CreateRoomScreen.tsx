@@ -16,7 +16,7 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../lib/nav';
 import { useStore } from '../lib/store';
 import { RING_ORDER, alpha } from '../lib/theme';
-import type { PlayerColor } from '../lib/types';
+import type { PlayerColor, Seat } from '../lib/types';
 import { Btn, Card, Header, Press } from '../components/ui';
 import { multiplayer } from '../lib/multiplayer';
 import { haptic, play } from '../lib/sound';
@@ -27,15 +27,60 @@ export default function CreateRoomScreen({ navigation }: Props) {
   const { isDark, theme, save, setName } = useStore();
   const ui = isDark ? theme.dark_ : theme.light;
 
+  const [roomMode, setRoomMode] = useState<'pass_play' | 'online'>('pass_play');
   const [name, setHostName] = useState(save.profile.name || 'Player');
   const [maxPlayers, setMaxPlayers] = useState<2 | 3 | 4>(4);
   const [selectedColor, setSelectedColor] = useState<PlayerColor>(save.profile.avatar || 'red');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const startPassAndPlayRoom = () => {
+    const code = Math.random().toString(36).substring(2, 8).toUpperCase();
+    const otherColors = RING_ORDER.filter((c) => c !== selectedColor);
+    const seats: Seat[] = [
+      {
+        id: `${selectedColor}-seat`,
+        color: selectedColor,
+        name: name.trim() || save.profile.name || 'Player 1',
+        type: 'human',
+        difficulty: 'medium',
+        playerId: save.profile.id || `usr_${Date.now()}`,
+      },
+    ];
+
+    for (let i = 1; i < maxPlayers; i++) {
+      const c = otherColors[i - 1];
+      seats.push({
+        id: `${c}-seat`,
+        color: c,
+        name: `Player ${i + 1}`,
+        type: 'human',
+        difficulty: 'medium',
+      });
+    }
+
+    play('click');
+    haptic('success');
+    navigation.replace('Game', {
+      mode: 'room',
+      seats,
+      roomId: `room_${code}`,
+      isOnline: false,
+    });
+  };
+
   const handleCreateRoom = async () => {
     if (!name.trim()) {
       setError('Please enter your name.');
+      return;
+    }
+
+    if (name.trim() !== save.profile.name) {
+      setName(name.trim());
+    }
+
+    if (roomMode === 'pass_play') {
+      startPassAndPlayRoom();
       return;
     }
 
@@ -45,10 +90,6 @@ export default function CreateRoomScreen({ navigation }: Props) {
     play('click');
 
     try {
-      if (name.trim() !== save.profile.name) {
-        setName(name.trim());
-      }
-
       if (save.settings.serverUrl) {
         multiplayer.setServerUrl(save.settings.serverUrl);
       }
@@ -91,18 +132,82 @@ export default function CreateRoomScreen({ navigation }: Props) {
   return (
     <SafeAreaView style={[styles.root, { backgroundColor: ui.bg }]} edges={['top', 'bottom']}>
       <StatusBar style={isDark ? 'light' : 'dark'} />
-      <Header ui={ui} title="Host Online Room" subtitle="Play with friends online" onBack={() => navigation.goBack()} />
+      <Header
+        ui={ui}
+        title={roomMode === 'pass_play' ? "Pass & Play Room" : "Host Online Room"}
+        subtitle={roomMode === 'pass_play' ? "Play on this device · No server required" : "Play with friends across devices"}
+        onBack={() => navigation.goBack()}
+      />
 
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 24 }} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+          {/* Room Mode Selector */}
+          <View style={{ flexDirection: 'row', backgroundColor: ui.surface, borderRadius: 12, padding: 4, borderWidth: 1, borderColor: ui.border, marginBottom: 14 }}>
+            <Press
+              onPress={() => {
+                setRoomMode('pass_play');
+                setError(null);
+                haptic('light');
+              }}
+              style={{ flex: 1 }}
+            >
+              <View
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 6,
+                  paddingVertical: 10,
+                  borderRadius: 9,
+                  backgroundColor: roomMode === 'pass_play' ? ui.primary : 'transparent',
+                }}
+              >
+                <Ionicons name="phone-portrait-outline" size={16} color={roomMode === 'pass_play' ? '#FFF' : ui.textDim} />
+                <Text style={{ fontWeight: '800', fontSize: 13, color: roomMode === 'pass_play' ? '#FFF' : ui.textDim }}>
+                  Pass & Play
+                </Text>
+              </View>
+            </Press>
+
+            <Press
+              onPress={() => {
+                setRoomMode('online');
+                setError(null);
+                haptic('light');
+              }}
+              style={{ flex: 1 }}
+            >
+              <View
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 6,
+                  paddingVertical: 10,
+                  borderRadius: 9,
+                  backgroundColor: roomMode === 'online' ? ui.primary : 'transparent',
+                }}
+              >
+                <Ionicons name="globe-outline" size={16} color={roomMode === 'online' ? '#FFF' : ui.textDim} />
+                <Text style={{ fontWeight: '800', fontSize: 13, color: roomMode === 'online' ? '#FFF' : ui.textDim }}>
+                  Online Room
+                </Text>
+              </View>
+            </Press>
+          </View>
+
           <Animated.View entering={FadeInDown.duration(340)} style={[styles.hero, { backgroundColor: ui.surface, borderColor: ui.border }]}>
             <View style={[styles.heroIcon, { backgroundColor: ui.surfaceAlt }]}>
-              <Ionicons name="globe-outline" size={24} color={ui.primary} />
+              <Ionicons name={roomMode === 'pass_play' ? "phone-portrait" : "globe-outline"} size={24} color={ui.primary} />
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={[styles.heroTitle, { color: ui.text }]}>Host a Multiplayer Match</Text>
+              <Text style={[styles.heroTitle, { color: ui.text }]}>
+                {roomMode === 'pass_play' ? "Same-Device Pass & Play" : "Host Online Match"}
+              </Text>
               <Text style={[styles.heroDesc, { color: ui.textDim }]}>
-                A real 6-character room code will be generated for friends on any device to join.
+                {roomMode === 'pass_play'
+                  ? "Take turns with friends right on this device. Works anywhere without network setup."
+                  : "A real 6-character room code will be generated for friends on other devices to join."}
               </Text>
             </View>
           </Animated.View>
@@ -182,9 +287,35 @@ export default function CreateRoomScreen({ navigation }: Props) {
           </View>
 
           {error ? (
-            <Animated.View entering={FadeIn.duration(200)} style={[styles.errorBox, { backgroundColor: 'rgba(239, 68, 68, 0.12)', borderColor: ui.danger }]}>
-              <Ionicons name="alert-circle" size={18} color={ui.danger} />
-              <Text style={[styles.errorText, { color: ui.danger }]}>{error}</Text>
+            <Animated.View entering={FadeIn.duration(200)} style={[styles.errorBox, { backgroundColor: 'rgba(239, 68, 68, 0.12)', borderColor: ui.danger, flexDirection: 'column', alignItems: 'stretch' }]}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Ionicons name="alert-circle" size={18} color={ui.danger} />
+                <Text style={[styles.errorText, { color: ui.danger, flex: 1 }]}>{error}</Text>
+              </View>
+              <View style={{ flexDirection: 'row', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
+                <Press
+                  onPress={startPassAndPlayRoom}
+                  style={{
+                    backgroundColor: ui.primary,
+                    paddingHorizontal: 12,
+                    paddingVertical: 7,
+                    borderRadius: 7,
+                  }}
+                >
+                  <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: 12 }}>▶️ Play as Pass & Play Instead</Text>
+                </Press>
+                <Press
+                  onPress={() => navigation.navigate('Settings')}
+                  style={{
+                    backgroundColor: alpha(ui.danger, 0.15),
+                    paddingHorizontal: 12,
+                    paddingVertical: 7,
+                    borderRadius: 7,
+                  }}
+                >
+                  <Text style={{ color: ui.danger, fontWeight: '800', fontSize: 12 }}>⚙️ Server Settings</Text>
+                </Press>
+              </View>
             </Animated.View>
           ) : null}
 
@@ -192,7 +323,9 @@ export default function CreateRoomScreen({ navigation }: Props) {
             <View style={{ flexDirection: 'row', gap: 10, alignItems: 'center' }}>
               <Ionicons name="flash" size={20} color={ui.primary} />
               <Text style={{ color: ui.textDim, fontSize: 12, lineHeight: 17, flex: 1, fontWeight: '600' }}>
-                Creating a room opens a live lobby where you can share the invite code. Once your friends join, you can start the game!
+                {roomMode === 'pass_play'
+                  ? "Pass & Play lets everyone play on this device taking turns. No server or network required!"
+                  : "Creating an online room generates a code for friends on other devices. Requires your backend server running on Render or Railway."}
               </Text>
             </View>
           </Card>
@@ -203,8 +336,14 @@ export default function CreateRoomScreen({ navigation }: Props) {
             ui={ui}
             size="lg"
             full
-            label={loading ? 'CREATING ROOM...' : 'CREATE ROOM'}
-            icon={loading ? undefined : 'add-circle'}
+            label={
+              loading
+                ? 'CONNECTING TO SERVER...'
+                : roomMode === 'pass_play'
+                ? 'START PASS & PLAY MATCH'
+                : 'CREATE ONLINE ROOM'
+            }
+            icon={loading ? undefined : roomMode === 'pass_play' ? 'play' : 'globe'}
             onPress={handleCreateRoom}
             disabled={loading || !name.trim()}
           />

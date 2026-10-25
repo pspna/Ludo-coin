@@ -49,16 +49,42 @@ export interface RoomClosedPayload {
 type EventListener<T> = (data: T) => void;
 
 export function getDefaultServerUrl(): string {
+  if (process.env.EXPO_PUBLIC_SERVER_URL) {
+    return process.env.EXPO_PUBLIC_SERVER_URL.trim().replace(/\/+$/, '');
+  }
   if (Platform.OS === 'web' && typeof window !== 'undefined' && window.location) {
     const host = window.location.hostname || 'localhost';
-    return `http://${host}:3001`;
+    if (host === 'localhost' || host === '127.0.0.1') {
+      return `http://${host}:3001`;
+    }
+    // Static web hosting (Vercel) does not run background processes on port 3001
+    return '';
   }
   // Android emulator uses 10.0.2.2 to access host machine; physical devices use LAN IP or custom setting
   return Platform.OS === 'android' ? 'http://10.0.2.2:3001' : 'http://localhost:3001';
 }
 
+export async function testServerConnection(url: string): Promise<{ ok: boolean; message: string }> {
+  try {
+    const clean = (url || '').trim().replace(/\/+$/, '');
+    if (!clean) return { ok: false, message: 'Server URL cannot be empty' };
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 6000);
+    const res = await fetch(`${clean}/health`, { signal: controller.signal });
+    clearTimeout(timeout);
+    if (!res.ok) {
+      return { ok: false, message: `Server returned HTTP ${res.status}` };
+    }
+    const data = await res.json();
+    return { ok: true, message: `Online! Active rooms: ${data.activeRooms ?? 0}` };
+  } catch (err: any) {
+    return { ok: false, message: err?.message || 'Server connection failed' };
+  }
+}
+
 export function toWsUrl(httpUrl: string): string {
   const clean = (httpUrl || getDefaultServerUrl()).replace(/\/+$/, '');
+  if (!clean) return '';
   if (clean.startsWith('https://')) return clean.replace('https://', 'wss://');
   if (clean.startsWith('http://')) return clean.replace('http://', 'ws://');
   if (clean.startsWith('ws://') || clean.startsWith('wss://')) return clean;
@@ -306,11 +332,27 @@ class MultiplayerClient {
 
   // ---------------- REST + WS Room Operations ----------------
 
+  private formatConnectionError(): string {
+    const isVercel = this.serverUrl.includes('vercel.app');
+    const isHttpsMismatch =
+      typeof window !== 'undefined' &&
+      window.location?.protocol === 'https:' &&
+      this.serverUrl.startsWith('http:');
+
+    if (isVercel) {
+      return `Multiplayer server not found on Vercel. Vercel only hosts the frontend web app. The live multiplayer server (server/server.js) must be hosted on Render/Railway. Configure your server URL in Settings.`;
+    }
+    if (isHttpsMismatch) {
+      return `Mixed content blocked: Cannot connect to insecure HTTP (${this.serverUrl}) from an HTTPS page. Please host the server with HTTPS/WSS (e.g. Render/Railway) and update Settings.`;
+    }
+    return `Could not connect to multiplayer server at ${this.serverUrl}. Please check your connection or server settings.`;
+  }
+
   public async createRoom(params: {
     hostId: string;
     hostName: string;
     hostAvatar: PlayerColor;
-    hostColor: PlayerColor;
+    hostColor?: PlayerColor;
     maxPlayers: number;
   }): Promise<{ success: boolean; room?: RoomData; error?: string }> {
     try {
@@ -331,7 +373,7 @@ class MultiplayerClient {
     } catch (err: any) {
       return {
         success: false,
-        error: `Could not connect to multiplayer server at ${this.serverUrl}. Please check your connection or server settings.`,
+        error: this.formatConnectionError(),
       };
     }
   }
@@ -348,7 +390,7 @@ class MultiplayerClient {
     } catch (err: any) {
       return {
         success: false,
-        error: `Could not reach multiplayer server at ${this.serverUrl}.`,
+        error: this.formatConnectionError(),
       };
     }
   }
@@ -403,7 +445,7 @@ class MultiplayerClient {
     } catch (err: any) {
       return {
         success: false,
-        error: `Could not connect to multiplayer server at ${this.serverUrl}.`,
+        error: this.formatConnectionError(),
       };
     }
   }
