@@ -47,6 +47,16 @@ export class ErrorBoundary extends Component<Props, State> {
     }
   };
 
+  handleBackToHome = () => {
+    this.setState({ hasError: false, error: null, errorInfo: null });
+    if (this.props.onReset) {
+      this.props.onReset();
+    }
+    if (typeof window !== 'undefined' && window.location) {
+      window.location.href = '/';
+    }
+  };
+
   render() {
     if (this.state.hasError) {
       return (
@@ -88,13 +98,7 @@ export class ErrorBoundary extends Component<Props, State> {
 
               <Pressable
                 style={[styles.btn, styles.secondaryBtn]}
-                onPress={() => {
-                  if (typeof window !== 'undefined' && window.location) {
-                    window.location.href = '/';
-                  } else {
-                    this.handleRetry();
-                  }
-                }}
+                onPress={this.handleBackToHome}
               >
                 <Ionicons name="home-outline" size={18} color="#94A3B8" />
                 <Text style={styles.secondaryBtnText}>Back to Home</Text>

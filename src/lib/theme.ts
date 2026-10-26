@@ -9,9 +9,11 @@ function clamp(v: number) {
 }
 
 export function hexToRgb(hex: string): [number, number, number] {
+  if (!hex || typeof hex !== 'string') return [124, 58, 237];
   let h = hex.replace('#', '').trim();
   if (h.length === 3) h = h.split('').map((c) => c + c).join('');
   const n = parseInt(h, 16);
+  if (isNaN(n)) return [124, 58, 237];
   return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
 }
 
@@ -21,18 +23,22 @@ export function rgbToHex(r: number, g: number, b: number) {
 
 /** mix a -> b, t = 0 keeps a, t = 1 becomes b */
 export function mix(a: string, b: string, t: number) {
-  const A = hexToRgb(a);
-  const B = hexToRgb(b);
+  const safeA = a && typeof a === 'string' ? a : '#7C3AED';
+  const safeB = b && typeof b === 'string' ? b : '#000000';
+  const A = hexToRgb(safeA);
+  const B = hexToRgb(safeB);
   return rgbToHex(A[0] + (B[0] - A[0]) * t, A[1] + (B[1] - A[1]) * t, A[2] + (B[2] - A[2]) * t);
 }
 
 /** t < 0 darkens, t > 0 lightens */
 export function shade(h: string, t: number) {
-  return t < 0 ? mix(h, '#000000', -t) : mix(h, '#FFFFFF', t);
+  const safeHex = h && typeof h === 'string' ? h : '#7C3AED';
+  return t < 0 ? mix(safeHex, '#000000', -t) : mix(safeHex, '#FFFFFF', t);
 }
 
 export function alpha(hex: string, a: number) {
-  const [r, g, b] = hexToRgb(hex);
+  const safeHex = hex && typeof hex === 'string' ? hex : '#7C3AED';
+  const [r, g, b] = hexToRgb(safeHex);
   return `rgba(${r}, ${g}, ${b}, ${a})`;
 }
 

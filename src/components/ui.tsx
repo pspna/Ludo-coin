@@ -1,5 +1,5 @@
 import React, { useCallback } from 'react';
-import { Pressable, StyleSheet, Text, View, ViewStyle, StyleProp, TextStyle } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View, ViewStyle, StyleProp, TextStyle } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
 import Ionicons from '@expo/vector-icons/Ionicons';
@@ -56,11 +56,12 @@ interface BtnProps {
   onPress?: () => void;
   icon?: string;
   iconSize?: number;
-  variant?: 'primary' | 'surface' | 'ghost' | 'gold' | 'secondary' | 'danger';
+  variant?: 'primary' | 'surface' | 'ghost' | 'gold' | 'secondary' | 'danger' | (string & {});
   size?: 'sm' | 'md' | 'lg';
   colors?: string[];
   style?: StyleProp<ViewStyle>;
   disabled?: boolean;
+  loading?: boolean;
   full?: boolean;
   ui?: {
     text?: string;
@@ -76,7 +77,7 @@ interface BtnProps {
   };
 }
 
-const DEFAULT_BTN_UI = {
+export const DEFAULT_BTN_UI = {
   text: '#F8FAFC',
   textDim: '#94A3B8',
   surface: '#1E293B',
@@ -89,12 +90,39 @@ const DEFAULT_BTN_UI = {
   danger: '#EF4444',
 };
 
-export function Btn({ label, title, onPress, icon, iconSize = 20, variant = 'primary', size = 'md', colors, style, disabled, full, ui }: BtnProps) {
+export function Btn({
+  label,
+  title,
+  onPress,
+  icon,
+  iconSize = 20,
+  variant = 'primary',
+  size = 'md',
+  colors,
+  style,
+  disabled,
+  loading = false,
+  full,
+  ui,
+}: BtnProps) {
   const padV = size === 'lg' ? 17 : size === 'sm' ? 9 : 13;
   const padH = size === 'lg' ? 28 : size === 'sm' ? 14 : 20;
   const font = size === 'lg' ? 18 : size === 'sm' ? 13 : 15;
   const displayLabel = label || title || '';
-  const safeUi = { ...DEFAULT_BTN_UI, ...(ui || {}) };
+  const isDisabled = Boolean(disabled || loading);
+
+  const safeUi = {
+    text: ui?.text || DEFAULT_BTN_UI.text,
+    textDim: ui?.textDim || DEFAULT_BTN_UI.textDim,
+    surface: ui?.surface || DEFAULT_BTN_UI.surface,
+    surfaceAlt: ui?.surfaceAlt || DEFAULT_BTN_UI.surfaceAlt,
+    border: ui?.border || DEFAULT_BTN_UI.border,
+    primary: ui?.primary || DEFAULT_BTN_UI.primary,
+    onPrimary: ui?.onPrimary || DEFAULT_BTN_UI.onPrimary,
+    gold: ui?.gold || DEFAULT_BTN_UI.gold,
+    shadow: ui?.shadow || DEFAULT_BTN_UI.shadow,
+    danger: ui?.danger || DEFAULT_BTN_UI.danger,
+  };
 
   const base: ViewStyle = {
     paddingVertical: padV,
@@ -106,56 +134,95 @@ export function Btn({ label, title, onPress, icon, iconSize = 20, variant = 'pri
     alignSelf: full ? 'stretch' : 'flex-start',
   };
 
-  if (variant === 'primary' || variant === 'gold' || variant === 'danger') {
-    const grad = colors || (
-      variant === 'gold'
-        ? ['#F5C542', '#D08A0B']
-        : variant === 'danger'
-        ? [safeUi.danger, shade(safeUi.danger, -0.25)]
-        : [safeUi.primary, shade(safeUi.primary, -0.3)]
-    );
-    const textColor = variant === 'gold' ? '#3A2A00' : safeUi.onPrimary;
+  const isSurface = variant === 'surface' || variant === 'secondary';
+  const isGhost = variant === 'ghost';
+
+  if (isSurface || isGhost) {
+    const textColor = isSurface ? safeUi.text : safeUi.textDim;
     return (
-      <Press onPress={onPress} disabled={disabled} style={[{ borderRadius: base.borderRadius, shadowColor: grad[0], shadowOpacity: 0.45, shadowRadius: 14, shadowOffset: { width: 0, height: 7 }, elevation: 6 }, style]}>
-        <LinearGradient colors={grad as any} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} style={base}>
-          {icon ? <Ionicons name={icon as any} size={iconSize} color={textColor} style={{ marginRight: 9 }} /> : null}
-          <Text style={{ color: textColor, fontWeight: '900', fontSize: font, letterSpacing: 0.4 }}>{displayLabel}</Text>
-        </LinearGradient>
+      <Press onPress={onPress} disabled={isDisabled} style={style}>
+        <View
+          style={[
+            base,
+            {
+              backgroundColor: isSurface ? safeUi.surface : 'transparent',
+              borderWidth: isSurface ? 1.5 : 0,
+              borderColor: safeUi.border,
+              opacity: isDisabled ? 0.6 : 1,
+            },
+          ]}
+        >
+          {loading ? (
+            <ActivityIndicator size="small" color={textColor} style={{ marginRight: displayLabel ? 8 : 0 }} />
+          ) : icon ? (
+            <Ionicons name={icon as any} size={iconSize} color={textColor} style={{ marginRight: displayLabel ? 8 : 0 }} />
+          ) : null}
+          {displayLabel ? (
+            <Text style={{ color: textColor, fontWeight: '800', fontSize: font }}>{displayLabel}</Text>
+          ) : null}
+        </View>
       </Press>
     );
   }
 
-  const isSurface = variant === 'surface' || variant === 'secondary';
+  // Gradient buttons: primary (default), gold, danger, or any other variant fallback
+  const isGold = variant === 'gold';
+  const isDanger = variant === 'danger';
+
+  const grad = colors || (
+    isGold
+      ? ['#F5C542', '#D08A0B']
+      : isDanger
+      ? [safeUi.danger, shade(safeUi.danger, -0.25)]
+      : [safeUi.primary, shade(safeUi.primary, -0.3)]
+  );
+  const textColor = isGold ? '#3A2A00' : safeUi.onPrimary;
+
   return (
-    <Press onPress={onPress} disabled={disabled} style={style}>
-      <View
-        style={[
-          base,
-          {
-            backgroundColor: isSurface ? safeUi.surface : 'transparent',
-            borderWidth: isSurface ? 1.5 : 0,
-            borderColor: safeUi.border,
-          },
-        ]}
-      >
-        {icon ? <Ionicons name={icon as any} size={iconSize} color={isSurface ? safeUi.text : safeUi.textDim} style={{ marginRight: 8 }} /> : null}
-        <Text style={{ color: isSurface ? safeUi.text : safeUi.textDim, fontWeight: '800', fontSize: font }}>{displayLabel}</Text>
-      </View>
+    <Press
+      onPress={onPress}
+      disabled={isDisabled}
+      style={[
+        {
+          borderRadius: base.borderRadius,
+          shadowColor: grad[0] || safeUi.primary,
+          shadowOpacity: 0.45,
+          shadowRadius: 14,
+          shadowOffset: { width: 0, height: 7 },
+          elevation: 6,
+          opacity: isDisabled ? 0.6 : 1,
+        },
+        style,
+      ]}
+    >
+      <LinearGradient colors={grad as any} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} style={base}>
+        {loading ? (
+          <ActivityIndicator size="small" color={textColor} style={{ marginRight: displayLabel ? 8 : 0 }} />
+        ) : icon ? (
+          <Ionicons name={icon as any} size={iconSize} color={textColor} style={{ marginRight: displayLabel ? 9 : 0 }} />
+        ) : null}
+        {displayLabel ? (
+          <Text style={{ color: textColor, fontWeight: '900', fontSize: font, letterSpacing: 0.4 }}>{displayLabel}</Text>
+        ) : null}
+      </LinearGradient>
     </Press>
   );
 }
 
-export function Card({ children, style, ui, elevated = true }: { children: React.ReactNode; style?: StyleProp<ViewStyle>; ui: any; elevated?: boolean }) {
+export function Card({ children, style, ui, elevated = true }: { children: React.ReactNode; style?: StyleProp<ViewStyle>; ui?: any; elevated?: boolean }) {
+  const surface = ui?.surface || DEFAULT_BTN_UI.surface;
+  const border = ui?.border || DEFAULT_BTN_UI.border;
+  const shadow = ui?.shadow || DEFAULT_BTN_UI.shadow;
   return (
     <View
       style={[
         {
-          backgroundColor: ui.surface,
+          backgroundColor: surface,
           borderRadius: 22,
           borderWidth: 1,
-          borderColor: ui.border,
+          borderColor: border,
           padding: 16,
-          shadowColor: ui.shadow,
+          shadowColor: shadow,
           shadowOpacity: elevated ? 0.14 : 0,
           shadowRadius: 16,
           shadowOffset: { width: 0, height: 8 },
@@ -180,25 +247,30 @@ export function Header({
   subtitle?: string;
   onBack?: () => void;
   right?: React.ReactNode;
-  ui: any;
+  ui?: any;
 }) {
+  const text = ui?.text || DEFAULT_BTN_UI.text;
+  const textDim = ui?.textDim || DEFAULT_BTN_UI.textDim;
+  const surface = ui?.surface || DEFAULT_BTN_UI.surface;
+  const border = ui?.border || DEFAULT_BTN_UI.border;
+
   return (
     <View style={styles.header}>
       {onBack ? (
         <Press onPress={onBack} style={{ marginRight: 12 }}>
-          <View style={[styles.headerBtn, { backgroundColor: ui.surface, borderColor: ui.border }]}>
-            <Ionicons name="chevron-back" size={22} color={ui.text} />
+          <View style={[styles.headerBtn, { backgroundColor: surface, borderColor: border }]}>
+            <Ionicons name="chevron-back" size={22} color={text} />
           </View>
         </Press>
       ) : (
         <View style={{ width: 8 }} />
       )}
       <View style={{ flex: 1 }}>
-        <Text numberOfLines={1} style={[styles.headerTitle, { color: ui.text }]}>
+        <Text numberOfLines={1} style={[styles.headerTitle, { color: text }]}>
           {title}
         </Text>
         {subtitle ? (
-          <Text numberOfLines={1} style={[styles.headerSub, { color: ui.textDim }]}>
+          <Text numberOfLines={1} style={[styles.headerSub, { color: textDim }]}>
             {subtitle}
           </Text>
         ) : null}
@@ -217,8 +289,9 @@ export function Pill({ label, icon, color, bg, style, textStyle }: { label: stri
   );
 }
 
-export function SectionTitle({ children, ui, style }: { children: React.ReactNode; ui: any; style?: StyleProp<TextStyle> }) {
-  return <Text style={[{ color: ui.textDim, fontWeight: '900', fontSize: 12, letterSpacing: 1.4, textTransform: 'uppercase', marginBottom: 10, marginTop: 18 }, style]}>{children}</Text>;
+export function SectionTitle({ children, ui, style }: { children: React.ReactNode; ui?: any; style?: StyleProp<TextStyle> }) {
+  const textDim = ui?.textDim || DEFAULT_BTN_UI.textDim;
+  return <Text style={[{ color: textDim, fontWeight: '900', fontSize: 12, letterSpacing: 1.4, textTransform: 'uppercase', marginBottom: 10, marginTop: 18 }, style]}>{children}</Text>;
 }
 
 const styles = StyleSheet.create({

@@ -32,18 +32,24 @@ const Stack = createNativeStackNavigator<RootStackParamList>();
 
 function Root() {
   const { isDark, theme } = useStore();
-  const ui = isDark ? theme.dark_ : theme.light;
+  const ui = (isDark ? theme?.dark_ : theme?.light) || {
+    bg: '#0F172A',
+    surface: '#1E293B',
+    text: '#F8FAFC',
+    primary: '#7C3AED',
+    border: '#334155',
+  };
 
   const base = isDark ? NavDarkTheme : NavLightTheme;
   const navTheme = {
     ...base,
     colors: {
       ...base.colors,
-      background: ui.bg,
-      card: ui.surface,
-      text: ui.text,
-      primary: ui.primary,
-      border: ui.border,
+      background: ui.bg || '#0F172A',
+      card: ui.surface || '#1E293B',
+      text: ui.text || '#F8FAFC',
+      primary: ui.primary || '#7C3AED',
+      border: ui.border || '#334155',
     },
   };
 

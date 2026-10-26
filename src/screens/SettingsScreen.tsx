@@ -176,6 +176,7 @@ export default function SettingsScreen({ navigation }: Props) {
                   size="sm"
                   variant="surface"
                   icon={testResult?.testing ? undefined : "wifi"}
+                  loading={Boolean(testResult?.testing)}
                   disabled={testResult?.testing}
                   onPress={handleTestServer}
                 />
