@@ -17,7 +17,7 @@ import { MAX_STEPS, applyMove, createTokens, hasWon, legalMoves, rollDice, seatP
 import { chooseMove } from '../lib/ai';
 import { haptic, play, setFeedback } from '../lib/sound';
 import { multiplayer, type ConnectionState } from '../lib/multiplayer';
-import type { Banner, GameMode, MatchState, Seat, Token } from '../lib/types';
+import type { Banner, GameEvent, GameMode, MatchState, Seat, Token } from '../lib/types';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Game'>;
 
@@ -211,9 +211,9 @@ export default function GameScreen({ navigation, route }: Props) {
         });
       }
 
-      const captures = payload.events ? payload.events.filter((e) => e.type === 'capture').length : 0;
-      const finished = payload.events ? payload.events.some((e) => e.type === 'finish') : false;
-      const entered = payload.events ? payload.events.some((e) => e.type === 'enter') : false;
+      const captures = payload.events ? payload.events.filter((e: GameEvent) => e.type === 'capture').length : 0;
+      const finished = payload.events ? payload.events.some((e: GameEvent) => e.type === 'finish') : false;
+      const entered = payload.events ? payload.events.some((e: GameEvent) => e.type === 'enter') : false;
 
       commit((c) => {
         if (payload.room?.match?.tokens) {
@@ -254,15 +254,16 @@ export default function GameScreen({ navigation, route }: Props) {
     });
 
     const unsubPlayerLeft = multiplayer.onPlayerLeft((payload) => {
-      if (payload.room.id !== roomId) return;
-      toast(`${payload.playerName} left the match`, 'bad', 2000);
+      if (payload.room && payload.room.id !== roomId) return;
+      toast(`${payload.playerName || 'A player'} left the match`, 'bad', 2000);
       if (payload.room?.match) {
+        const nextMatch = payload.room.match;
         commit((c) => {
-          if (typeof payload.room.match?.turn === 'number') {
-            c.turn = payload.room.match.turn;
+          if (typeof nextMatch.turn === 'number') {
+            c.turn = nextMatch.turn;
           }
-          if (payload.room.match?.tokens) {
-            c.tokens = payload.room.match.tokens as Token[];
+          if (nextMatch.tokens) {
+            c.tokens = nextMatch.tokens as Token[];
           }
         });
       }
@@ -675,20 +676,38 @@ export default function GameScreen({ navigation, route }: Props) {
         </View>
 
         {isOnlineMode ? (
-          <View style={[styles.onlineBadge, { backgroundColor: ui.surface, borderColor: ui.border }]}>
-            <View
-              style={[
-                styles.connDot,
-                {
-                  backgroundColor:
-                    connState === 'connected' ? '#22C55E' : connState === 'connecting' ? '#F59E0B' : '#EF4444',
-                },
-              ]}
-            />
-            <Text style={{ color: ui.text, fontWeight: '900', fontSize: 11 }}>
-              {connState === 'connected' ? 'LIVE' : 'RECONNECT'}
-            </Text>
-          </View>
+          <Press
+            onPress={() => {
+              if (connState !== 'connected') {
+                haptic('light');
+                multiplayer.reconnect();
+              }
+            }}
+            disabled={connState === 'connected'}
+          >
+            <View style={[styles.onlineBadge, { backgroundColor: ui.surface, borderColor: ui.border }]}>
+              <View
+                style={[
+                  styles.connDot,
+                  {
+                    backgroundColor:
+                      connState === 'connected'
+                        ? '#22C55E'
+                        : connState === 'connecting' || connState === 'reconnecting'
+                        ? '#F59E0B'
+                        : '#EF4444',
+                  },
+                ]}
+              />
+              <Text style={{ color: ui.text, fontWeight: '900', fontSize: 11 }}>
+                {connState === 'connected'
+                  ? 'LIVE'
+                  : connState === 'connecting' || connState === 'reconnecting'
+                  ? 'SYNCING...'
+                  : 'RECONNECT ↻'}
+              </Text>
+            </View>
+          </Press>
         ) : (
           <View style={[styles.iconBtn, { backgroundColor: ui.surface, borderColor: ui.border, flexDirection: 'row', gap: 5, paddingHorizontal: 11 }]}>
             <Ionicons name="star" size={13} color="#E9A81C" />

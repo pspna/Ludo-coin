@@ -92,9 +92,9 @@ export default function RoomLobbyScreen({ navigation, route }: Props) {
       setStarting(true);
       play('win');
       haptic('success');
-      const seats: Seat[] = (nextRoom.players || []).map((p, idx) => ({
+      const seats: Seat[] = (nextRoom.players || []).map((p: RoomPlayer, idx: number) => ({
         id: p.seatId || `seat_${idx}`,
-        color: (p?.color && theme.players[p.color]) ? p.color : RING_ORDER[idx % 4],
+        color: (p?.color && p.color in theme.players) ? (p.color as PlayerColor) : RING_ORDER[idx % 4],
         name: p?.name || `Player ${idx + 1}`,
         type: 'human' as const,
         difficulty: 'medium' as const,
@@ -247,20 +247,38 @@ export default function RoomLobbyScreen({ navigation, route }: Props) {
         subtitle={`Code: ${code}`}
         onBack={handleLeave}
         right={
-          <View style={[styles.connBadge, { backgroundColor: ui.surface, borderColor: ui.border }]}>
-            <View
-              style={[
-                styles.connDot,
-                {
-                  backgroundColor:
-                    connState === 'connected' ? '#22C55E' : connState === 'connecting' ? '#F59E0B' : '#EF4444',
-                },
-              ]}
-            />
-            <Text style={[styles.connText, { color: ui.textDim }]}>
-              {connState === 'connected' ? 'LIVE' : connState === 'connecting' ? 'SYNCING' : 'OFFLINE'}
-            </Text>
-          </View>
+          <Press
+            onPress={() => {
+              if (connState !== 'connected') {
+                haptic('light');
+                multiplayer.reconnect();
+              }
+            }}
+            disabled={connState === 'connected'}
+          >
+            <View style={[styles.connBadge, { backgroundColor: ui.surface, borderColor: ui.border }]}>
+              <View
+                style={[
+                  styles.connDot,
+                  {
+                    backgroundColor:
+                      connState === 'connected'
+                        ? '#22C55E'
+                        : connState === 'connecting' || connState === 'reconnecting'
+                        ? '#F59E0B'
+                        : '#EF4444',
+                  },
+                ]}
+              />
+              <Text style={[styles.connText, { color: ui.textDim }]}>
+                {connState === 'connected'
+                  ? 'LIVE'
+                  : connState === 'connecting' || connState === 'reconnecting'
+                  ? 'SYNCING'
+                  : 'RECONNECT ↻'}
+              </Text>
+            </View>
+          </Press>
         }
       />
 

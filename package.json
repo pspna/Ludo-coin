@@ -39,7 +39,9 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
-    "build": "npx expo export --platform web",
+    "build": "node scripts/check-env.js && npx expo export --platform web",
+    "check:env": "node scripts/check-env.js",
+    "test:multiplayer": "node scripts/test-multiplayer.js",
     "server": "node server/server.js"
   },
   "private": true

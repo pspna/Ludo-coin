@@ -10,7 +10,7 @@ import { useStore } from '../lib/store';
 import { alpha } from '../lib/theme';
 import { Btn, Card, Header, Press } from '../components/ui';
 import { play, haptic, setFeedback } from '../lib/sound';
-import { multiplayer, getDefaultServerUrl, testServerConnection } from '../lib/multiplayer';
+import { multiplayer, getDefaultServerUrl, testServerConnection, validateServerUrl } from '../lib/multiplayer';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Settings'>;
 
@@ -33,12 +33,29 @@ export default function SettingsScreen({ navigation }: Props) {
   };
 
   const handleSaveServer = () => {
-    const clean = serverUrlInput.trim().replace(/\/+$/, '');
+    const raw = serverUrlInput.trim();
+    if (!raw) {
+      setSettings({ serverUrl: '' });
+      multiplayer.setServerUrl('');
+      play('click');
+      haptic('light');
+      setTestResult({ ok: true, message: 'Server endpoint cleared. Using default configuration.' });
+      return;
+    }
+    const validation = validateServerUrl(raw);
+    if (!validation.valid) {
+      play('invalid');
+      haptic('warning');
+      setTestResult({ ok: false, message: validation.error || 'Invalid server URL' });
+      return;
+    }
+    const clean = validation.normalizedUrl;
+    setServerUrlInput(clean);
     setSettings({ serverUrl: clean });
     multiplayer.setServerUrl(clean);
     play('click');
     haptic('success');
-    setTestResult({ ok: true, message: 'Server endpoint saved!' });
+    setTestResult({ ok: true, message: 'Server endpoint validated and saved!' });
   };
 
   const handleTestServer = async () => {

@@ -660,9 +660,24 @@ const server = http.createServer((req, res) => {
   const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
   const pathname = url.pathname;
 
-  if (pathname === '/health' && req.method === 'GET') {
+  if ((pathname === '/health' || pathname === '/api/health') && (req.method === 'GET' || req.method === 'HEAD')) {
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ status: 'ok', time: Date.now(), activeRooms: rooms.size }));
+    if (req.method === 'HEAD') {
+      res.end();
+      return;
+    }
+    res.end(
+      JSON.stringify({
+        status: 'ok',
+        service: 'ludovudo-multiplayer',
+        version: '1.0.0',
+        ready: true,
+        uptime: Math.floor(process.uptime()),
+        time: Date.now(),
+        activeRooms: rooms.size,
+        activeSockets: playerSockets.size,
+      })
+    );
     return;
   }
 

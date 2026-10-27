@@ -1,70 +1,179 @@
 import { Platform } from 'react-native';
 import type { MatchState, PlayerColor, RoomData, RoomPlayer, Token, GameEvent, Pt } from './types';
 
-export type ConnectionState = 'connected' | 'connecting' | 'disconnected';
+export type ConnectionState = 'connected' | 'connecting' | 'reconnecting' | 'disconnected' | 'error';
+
+export type MpEventListener<T> = (data: T) => void;
+
+export interface LobbyEventPayload {
+  room: RoomData;
+  event?: string;
+}
 
 export interface DiceRolledPayload {
   roomId: string;
   dice: number;
-  moves?: string[];
+  moves: any[];
   forfeit?: boolean;
   passTurn?: boolean;
   reason?: string;
-  room: RoomData;
+  room?: RoomData;
 }
 
 export interface TokenMovedPayload {
   roomId: string;
   tokenId: string;
   dice: number;
-  waypoints: Pt[];
-  events: GameEvent[];
-  extraTurn: boolean;
-  isWinner: boolean;
-  winnerSeatId: string | null;
-  room: RoomData;
+  waypoints?: Pt[];
+  events?: GameEvent[];
+  extraTurn?: boolean;
+  isWinner?: boolean;
+  winnerSeatId?: string;
+  room?: RoomData;
 }
 
 export interface PlayerLeftPayload {
   playerId: string;
-  playerName: string;
-  room: RoomData;
-}
-
-export interface LobbyEventPayload {
-  room: RoomData;
-  event?: {
-    type: string;
-    player?: RoomPlayer;
-    playerId?: string;
-    playerName?: string;
-  };
+  playerName?: string;
+  room?: RoomData;
 }
 
 export interface RoomClosedPayload {
-  roomId: string;
-  reason: string;
+  roomId?: string;
+  reason?: string;
 }
 
-type EventListener<T> = (data: T) => void;
+export interface UrlValidationResult {
+  valid: boolean;
+  normalizedUrl: string;
+  wsUrl: string;
+  error?: string;
+  isMixedContent?: boolean;
+  isVercel?: boolean;
+}
 
-export function normalizeServerUrl(rawUrl: string): string {
-  let clean = (rawUrl || '').trim().replace(/\/+$/, '');
-  if (!clean) return '';
+/**
+ * Validates, sanitizes, and normalizes a multiplayer server endpoint.
+ * Enforces valid HTTP/HTTPS/WS/WSS schemas and prevents common misconfigurations.
+ */
+export function validateServerUrl(rawUrl?: string | null): UrlValidationResult {
+  const clean = (rawUrl || '').trim().replace(/\/+$/, '');
+  if (!clean) {
+    return {
+      valid: false,
+      normalizedUrl: '',
+      wsUrl: '',
+      error:
+        'Multiplayer server URL is not configured. Please open Server Settings (⚙️) ' +
+        'to set your live backend endpoint (e.g. https://your-server.onrender.com) ' +
+        'or set EXPO_PUBLIC_SERVER_URL in your deployment configuration.',
+    };
+  }
+
+  // Detect accidental entry of Vercel app domain
+  if (clean.includes('.vercel.app')) {
+    return {
+      valid: false,
+      normalizedUrl: clean,
+      wsUrl: '',
+      isVercel: true,
+      error:
+        'Multiplayer server not found on Vercel. Vercel only hosts the static frontend application ' +
+        'and cannot run persistent WebSocket servers. Please deploy server/server.js to Render or Railway ' +
+        'and set your live backend endpoint in Server Settings (⚙️).',
+    };
+  }
+
+  // Reject unsupported protocols
+  if (
+    clean.startsWith('ftp://') ||
+    clean.startsWith('file://') ||
+    clean.startsWith('javascript:') ||
+    clean.startsWith('data:')
+  ) {
+    return {
+      valid: false,
+      normalizedUrl: clean,
+      wsUrl: '',
+      error: 'Unsupported protocol in server URL. Only HTTP, HTTPS, WS, and WSS are supported.',
+    };
+  }
+
+  let httpUrl = clean;
+  // If protocol was omitted, determine based on environment
   if (!clean.startsWith('http://') && !clean.startsWith('https://') && !clean.startsWith('ws://') && !clean.startsWith('wss://')) {
-    // If running in browser over https, default to https
     if (typeof window !== 'undefined' && window.location?.protocol === 'https:') {
-      clean = `https://${clean}`;
+      httpUrl = `https://${clean}`;
     } else {
-      clean = `http://${clean}`;
+      httpUrl = `http://${clean}`;
+    }
+  } else if (clean.startsWith('wss://')) {
+    httpUrl = clean.replace('wss://', 'https://');
+  } else if (clean.startsWith('ws://')) {
+    httpUrl = clean.replace('ws://', 'http://');
+  }
+
+  // Validate URL syntax
+  try {
+    const parsed = new URL(httpUrl);
+    if (!parsed.hostname) {
+      return {
+        valid: false,
+        normalizedUrl: httpUrl,
+        wsUrl: '',
+        error: `Invalid server URL hostname (${httpUrl}). Please provide a valid hostname.`,
+      };
+    }
+  } catch (e: any) {
+    return {
+      valid: false,
+      normalizedUrl: httpUrl,
+      wsUrl: '',
+      error: `Malformed server URL (${httpUrl}): ${e?.message || 'Invalid format'}`,
+    };
+  }
+
+  // Check mixed content in browser: HTTPS page cannot fetch insecure HTTP
+  if (typeof window !== 'undefined' && window.location?.protocol === 'https:' && httpUrl.startsWith('http://')) {
+    const isLocalhost = httpUrl.includes('localhost') || httpUrl.includes('127.0.0.1');
+    if (!isLocalhost) {
+      return {
+        valid: false,
+        normalizedUrl: httpUrl,
+        wsUrl: '',
+        isMixedContent: true,
+        error:
+          `Mixed content blocked: Cannot connect to an unencrypted HTTP backend (${httpUrl}) from an HTTPS page. ` +
+          'Please host the multiplayer server with HTTPS/WSS (e.g. on Render or Railway) and update Server Settings (⚙️).',
+      };
     }
   }
-  return clean;
+
+  let wsUrl = '';
+  if (httpUrl.startsWith('https://')) {
+    wsUrl = httpUrl.replace('https://', 'wss://');
+  } else if (httpUrl.startsWith('http://')) {
+    wsUrl = httpUrl.replace('http://', 'ws://');
+  }
+
+  return {
+    valid: true,
+    normalizedUrl: httpUrl,
+    wsUrl,
+  };
+}
+
+export function normalizeServerUrl(rawUrl: string): string {
+  const res = validateServerUrl(rawUrl);
+  return res.normalizedUrl;
 }
 
 export function getDefaultServerUrl(): string {
   if (process.env.EXPO_PUBLIC_SERVER_URL) {
-    return normalizeServerUrl(process.env.EXPO_PUBLIC_SERVER_URL);
+    const res = validateServerUrl(process.env.EXPO_PUBLIC_SERVER_URL);
+    if (res.valid) {
+      return res.normalizedUrl;
+    }
   }
   if (Platform.OS === 'web' && typeof window !== 'undefined' && window.location) {
     const host = window.location.hostname || 'localhost';
@@ -75,50 +184,58 @@ export function getDefaultServerUrl(): string {
     if (/^192\.168\./.test(host) || /^10\./.test(host) || /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(host)) {
       return `http://${host}:3001`;
     }
-    // Static web hosting on Vercel or other cloud platforms
+    // Static web hosting on Vercel or other cloud platforms: require explicit URL configuration
     return '';
   }
   // Android emulator uses 10.0.2.2 to access host machine; physical devices use LAN IP or custom setting
   return Platform.OS === 'android' ? 'http://10.0.2.2:3001' : 'http://localhost:3001';
 }
 
-export async function testServerConnection(url: string): Promise<{ ok: boolean; message: string }> {
+export async function testServerConnection(url: string): Promise<{ ok: boolean; message: string; details?: any }> {
   try {
-    const clean = normalizeServerUrl(url);
-    if (!clean) {
-      return { ok: false, message: 'Server URL cannot be empty' };
+    const validation = validateServerUrl(url);
+    if (!validation.valid) {
+      return { ok: false, message: validation.error || 'Invalid server URL' };
     }
-
-    // Check mixed content in browser: HTTPS page cannot fetch insecure HTTP
-    if (typeof window !== 'undefined' && window.location?.protocol === 'https:' && clean.startsWith('http:')) {
-      return {
-        ok: false,
-        message: `Mixed content blocked: Cannot connect to insecure HTTP (${clean}) from an HTTPS page. Please use HTTPS/WSS (e.g. on Render/Railway).`,
-      };
-    }
+    const clean = validation.normalizedUrl;
 
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 7000);
+    const timeout = setTimeout(() => controller.abort(), 8000);
+    const start = Date.now();
     const res = await fetch(`${clean}/health`, { signal: controller.signal });
+    const latency = Date.now() - start;
     clearTimeout(timeout);
 
     if (!res.ok) {
+      if (res.status === 404) {
+        return {
+          ok: false,
+          message: `Server returned 404 Not Found at ${clean}/health. The endpoint is reachable, but does not appear to be running the Ludo Royale server.js.`,
+        };
+      }
       return { ok: false, message: `Server returned HTTP ${res.status}` };
     }
+
     const data = await res.json();
-    return { ok: true, message: `Online! Active rooms: ${data.activeRooms ?? 0}` };
+    return {
+      ok: true,
+      message: `Online! Latency: ${latency}ms | Active rooms: ${data.activeRooms ?? 0}`,
+      details: data,
+    };
   } catch (err: any) {
+    if (err?.name === 'AbortError') {
+      return {
+        ok: false,
+        message: 'Connection timed out after 8s. If using Render free tier, the server may be waking up from sleep (can take ~30-50s). Please try again.',
+      };
+    }
     return { ok: false, message: err?.message || 'Server connection failed' };
   }
 }
 
 export function toWsUrl(httpUrl: string): string {
-  const clean = normalizeServerUrl(httpUrl || getDefaultServerUrl());
-  if (!clean) return '';
-  if (clean.startsWith('https://')) return clean.replace('https://', 'wss://');
-  if (clean.startsWith('http://')) return clean.replace('http://', 'ws://');
-  if (clean.startsWith('ws://') || clean.startsWith('wss://')) return clean;
-  return `ws://${clean}`;
+  const res = validateServerUrl(httpUrl || getDefaultServerUrl());
+  return res.wsUrl;
 }
 
 class MultiplayerClient {
@@ -130,20 +247,21 @@ class MultiplayerClient {
   private reconnectTimer: any = null;
   private pingTimer: any = null;
   private reconnectAttempts = 0;
-  private maxReconnectAttempts = 6;
+  private maxReconnectAttempts = 5;
   private explicitlyDisconnected = false;
+  private isRoomOperationInProgress = false;
 
   private listeners: {
-    connectionChange: Set<EventListener<ConnectionState>>;
-    lobbyUpdated: Set<EventListener<LobbyEventPayload>>;
-    gameStarted: Set<EventListener<RoomData>>;
-    diceRolled: Set<EventListener<DiceRolledPayload>>;
-    tokenMoved: Set<EventListener<TokenMovedPayload>>;
-    playerLeft: Set<EventListener<PlayerLeftPayload>>;
-    playerStatusChanged: Set<EventListener<any>>;
-    roomClosed: Set<EventListener<RoomClosedPayload>>;
-    syncState: Set<EventListener<RoomData>>;
-    error: Set<EventListener<string>>;
+    connectionChange: Set<MpEventListener<ConnectionState>>;
+    lobbyUpdated: Set<MpEventListener<LobbyEventPayload>>;
+    gameStarted: Set<MpEventListener<RoomData>>;
+    diceRolled: Set<MpEventListener<DiceRolledPayload>>;
+    tokenMoved: Set<MpEventListener<TokenMovedPayload>>;
+    playerLeft: Set<MpEventListener<PlayerLeftPayload>>;
+    playerStatusChanged: Set<MpEventListener<any>>;
+    roomClosed: Set<MpEventListener<RoomClosedPayload>>;
+    syncState: Set<MpEventListener<RoomData>>;
+    error: Set<MpEventListener<string>>;
   } = {
     connectionChange: new Set(),
     lobbyUpdated: new Set(),
@@ -190,7 +308,8 @@ class MultiplayerClient {
     if (playerId) this.currentPlayerId = playerId;
     if (roomId) this.currentRoomId = roomId;
 
-    if (!this.serverUrl || !this.serverUrl.trim()) {
+    const validation = validateServerUrl(this.serverUrl);
+    if (!validation.valid || !validation.wsUrl) {
       this.setConnectionState('disconnected');
       return Promise.resolve(false);
     }
@@ -199,16 +318,11 @@ class MultiplayerClient {
       return Promise.resolve(true);
     }
 
-    this.setConnectionState('connecting');
+    this.setConnectionState(this.reconnectAttempts > 0 ? 'reconnecting' : 'connecting');
 
     return new Promise((resolve) => {
       try {
-        const wsUrl = toWsUrl(this.serverUrl);
-        if (!wsUrl) {
-          this.setConnectionState('disconnected');
-          resolve(false);
-          return;
-        }
+        const wsUrl = validation.wsUrl;
         const socket = new WebSocket(wsUrl);
         this.ws = socket;
 
@@ -217,7 +331,7 @@ class MultiplayerClient {
             this.setConnectionState('disconnected');
             resolve(false);
           }
-        }, 5000);
+        }, 8000);
 
         socket.onopen = () => {
           clearTimeout(timeout);
@@ -265,14 +379,20 @@ class MultiplayerClient {
           this.setConnectionState('disconnected');
 
           if (!this.explicitlyDisconnected && this.reconnectAttempts < this.maxReconnectAttempts) {
-            const delay = Math.min(1000 * Math.pow(1.5, this.reconnectAttempts), 8000);
+            const delay = Math.min(1000 * Math.pow(1.5, this.reconnectAttempts), 10000);
             this.reconnectAttempts++;
+            this.setConnectionState('reconnecting');
             if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
             this.reconnectTimer = setTimeout(() => {
               if (!this.explicitlyDisconnected) {
                 this.connect(this.currentPlayerId || undefined, this.currentRoomId || undefined);
               }
             }, delay);
+          } else if (!this.explicitlyDisconnected && this.reconnectAttempts >= this.maxReconnectAttempts) {
+            this.setConnectionState('error');
+            this.listeners.error.forEach((fn) =>
+              fn('Connection to multiplayer server was lost. Please verify your connection or click Reconnect.')
+            );
           }
         };
       } catch (err) {
@@ -280,6 +400,13 @@ class MultiplayerClient {
         resolve(false);
       }
     });
+  }
+
+  public reconnect(): Promise<boolean> {
+    this.reconnectAttempts = 0;
+    this.disconnect();
+    this.explicitlyDisconnected = false;
+    return this.connect(this.currentPlayerId || undefined, this.currentRoomId || undefined);
   }
 
   public disconnect() {
@@ -377,35 +504,13 @@ class MultiplayerClient {
 
   // ---------------- REST + WS Room Operations ----------------
 
-  private formatConnectionError(): string {
-    if (!this.serverUrl || !this.serverUrl.trim()) {
-      return (
-        'Multiplayer server URL is not configured. Please open Server Settings (⚙️) ' +
-        'to set your live backend endpoint (e.g. https://your-server.onrender.com) ' +
-        'or set EXPO_PUBLIC_SERVER_URL in your deployment configuration.'
-      );
+  private formatConnectionError(overrideUrl?: string): string {
+    const targetUrl = overrideUrl !== undefined ? overrideUrl : this.serverUrl;
+    const validation = validateServerUrl(targetUrl);
+    if (!validation.valid && validation.error) {
+      return validation.error;
     }
-
-    const isVercel = this.serverUrl.includes('vercel.app');
-    const isHttpsMismatch =
-      typeof window !== 'undefined' &&
-      window.location?.protocol === 'https:' &&
-      this.serverUrl.startsWith('http:');
-
-    if (isVercel) {
-      return (
-        'Multiplayer server not found on Vercel. Vercel only hosts the frontend web app. ' +
-        'The live multiplayer server (server/server.js) must be hosted on Render or Railway. ' +
-        'Configure your live server URL in Server Settings (⚙️).'
-      );
-    }
-    if (isHttpsMismatch) {
-      return (
-        `Mixed content blocked: Cannot connect to insecure HTTP (${this.serverUrl}) from an HTTPS page. ` +
-        'Please host the multiplayer server with HTTPS/WSS (e.g. on Render/Railway) and update Server Settings.'
-      );
-    }
-    return `Could not connect to multiplayer server at ${this.serverUrl}. Please check your connection or server settings.`;
+    return `Could not connect to multiplayer server at ${validation.normalizedUrl || targetUrl}. Please check your connection or server settings (⚙️).`;
   }
 
   public async createRoom(params: {
@@ -415,16 +520,29 @@ class MultiplayerClient {
     hostColor?: PlayerColor;
     maxPlayers: number;
   }): Promise<{ success: boolean; room?: RoomData; error?: string }> {
-    if (!this.serverUrl || !this.serverUrl.trim()) {
-      return { success: false, error: this.formatConnectionError() };
+    if (this.isRoomOperationInProgress) {
+      return { success: false, error: 'A room creation request is already in progress. Please wait a moment.' };
     }
+
+    const validation = validateServerUrl(this.serverUrl);
+    if (!validation.valid) {
+      return { success: false, error: validation.error };
+    }
+
+    this.isRoomOperationInProgress = true;
     try {
       this.currentPlayerId = params.hostId;
-      const res = await fetch(`${this.serverUrl}/api/rooms`, {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 10000);
+
+      const res = await fetch(`${validation.normalizedUrl}/api/rooms`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(params),
+        signal: controller.signal,
       });
+      clearTimeout(timeout);
+
       const data = await res.json();
       if (!res.ok || !data.success) {
         return { success: false, error: data.error || 'Failed to create room' };
@@ -434,26 +552,48 @@ class MultiplayerClient {
       await this.connect(params.hostId, data.room.id);
       return { success: true, room: data.room };
     } catch (err: any) {
+      if (err?.name === 'AbortError') {
+        return {
+          success: false,
+          error: 'Room creation timed out after 10s. If the backend is hosted on a free tier (e.g. Render), it may take 30-50s to wake up. Please retry.',
+        };
+      }
       return {
         success: false,
         error: this.formatConnectionError(),
       };
+    } finally {
+      this.isRoomOperationInProgress = false;
     }
   }
 
   public async getRoomByCode(code: string): Promise<{ success: boolean; room?: RoomData; error?: string }> {
-    if (!this.serverUrl || !this.serverUrl.trim()) {
-      return { success: false, error: this.formatConnectionError() };
+    const validation = validateServerUrl(this.serverUrl);
+    if (!validation.valid) {
+      return { success: false, error: validation.error };
     }
     try {
       const clean = (code || '').trim().toUpperCase();
-      const res = await fetch(`${this.serverUrl}/api/rooms/${clean}`);
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 8000);
+
+      const res = await fetch(`${validation.normalizedUrl}/api/rooms/${clean}`, {
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+
       const data = await res.json();
       if (!res.ok || !data.success) {
         return { success: false, error: data.error || 'Room not found' };
       }
       return { success: true, room: data.room };
     } catch (err: any) {
+      if (err?.name === 'AbortError') {
+        return {
+          success: false,
+          error: 'Looking up room timed out after 8s. Please verify your connection or server status.',
+        };
+      }
       return {
         success: false,
         error: this.formatConnectionError(),
@@ -468,14 +608,24 @@ class MultiplayerClient {
     playerAvatar: PlayerColor;
     playerColor?: PlayerColor;
   }): Promise<{ success: boolean; room?: RoomData; player?: RoomPlayer; isRejoin?: boolean; error?: string }> {
-    if (!this.serverUrl || !this.serverUrl.trim()) {
-      return { success: false, error: this.formatConnectionError() };
+    if (this.isRoomOperationInProgress) {
+      return { success: false, error: 'A room join request is already in progress. Please wait a moment.' };
     }
+
+    const validation = validateServerUrl(this.serverUrl);
+    if (!validation.valid) {
+      return { success: false, error: validation.error };
+    }
+
+    this.isRoomOperationInProgress = true;
     try {
       const clean = (params.code || '').trim().toUpperCase();
       this.currentPlayerId = params.playerId;
 
-      const res = await fetch(`${this.serverUrl}/api/rooms/${clean}/join`, {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 10000);
+
+      const res = await fetch(`${validation.normalizedUrl}/api/rooms/${clean}/join`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -484,7 +634,9 @@ class MultiplayerClient {
           playerAvatar: params.playerAvatar,
           playerColor: params.playerColor,
         }),
+        signal: controller.signal,
       });
+      clearTimeout(timeout);
 
       const data = await res.json();
       if (!res.ok || !data.success) {
@@ -512,10 +664,18 @@ class MultiplayerClient {
         isRejoin: data.isRejoin,
       };
     } catch (err: any) {
+      if (err?.name === 'AbortError') {
+        return {
+          success: false,
+          error: 'Joining room timed out after 10s. If the backend is waking up, please try again.',
+        };
+      }
       return {
         success: false,
         error: this.formatConnectionError(),
       };
+    } finally {
+      this.isRoomOperationInProgress = false;
     }
   }
 
@@ -590,53 +750,53 @@ class MultiplayerClient {
 
   // ---------------- Event Subscriptions ----------------
 
-  public onConnectionChange(fn: EventListener<ConnectionState>): () => void {
+  public onConnectionChange(fn: MpEventListener<ConnectionState>): () => void {
     this.listeners.connectionChange.add(fn);
     fn(this.connectionState);
     return () => this.listeners.connectionChange.delete(fn);
   }
 
-  public onLobbyUpdated(fn: EventListener<LobbyEventPayload>): () => void {
+  public onLobbyUpdated(fn: MpEventListener<LobbyEventPayload>): () => void {
     this.listeners.lobbyUpdated.add(fn);
     return () => this.listeners.lobbyUpdated.delete(fn);
   }
 
-  public onGameStarted(fn: EventListener<RoomData>): () => void {
+  public onGameStarted(fn: MpEventListener<RoomData>): () => void {
     this.listeners.gameStarted.add(fn);
     return () => this.listeners.gameStarted.delete(fn);
   }
 
-  public onDiceRolled(fn: EventListener<DiceRolledPayload>): () => void {
+  public onDiceRolled(fn: MpEventListener<DiceRolledPayload>): () => void {
     this.listeners.diceRolled.add(fn);
     return () => this.listeners.diceRolled.delete(fn);
   }
 
-  public onTokenMoved(fn: EventListener<TokenMovedPayload>): () => void {
+  public onTokenMoved(fn: MpEventListener<TokenMovedPayload>): () => void {
     this.listeners.tokenMoved.add(fn);
     return () => this.listeners.tokenMoved.delete(fn);
   }
 
-  public onPlayerLeft(fn: EventListener<PlayerLeftPayload>): () => void {
+  public onPlayerLeft(fn: MpEventListener<PlayerLeftPayload>): () => void {
     this.listeners.playerLeft.add(fn);
     return () => this.listeners.playerLeft.delete(fn);
   }
 
-  public onPlayerStatusChanged(fn: EventListener<any>): () => void {
+  public onPlayerStatusChanged(fn: MpEventListener<any>): () => void {
     this.listeners.playerStatusChanged.add(fn);
     return () => this.listeners.playerStatusChanged.delete(fn);
   }
 
-  public onRoomClosed(fn: EventListener<RoomClosedPayload>): () => void {
+  public onRoomClosed(fn: MpEventListener<RoomClosedPayload>): () => void {
     this.listeners.roomClosed.add(fn);
     return () => this.listeners.roomClosed.delete(fn);
   }
 
-  public onSyncState(fn: EventListener<RoomData>): () => void {
+  public onSyncState(fn: MpEventListener<RoomData>): () => void {
     this.listeners.syncState.add(fn);
     return () => this.listeners.syncState.delete(fn);
   }
 
-  public onError(fn: EventListener<string>): () => void {
+  public onError(fn: MpEventListener<string>): () => void {
     this.listeners.error.add(fn);
     return () => this.listeners.error.delete(fn);
   }
